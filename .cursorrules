@@ -1,0 +1,197 @@
+# Activity Summary - Data Processing Application
+
+## Project Context
+This is a NestJS data processing application that fetches activity data from multiple APIs (GitLab, Slack, Teams, Jira) and generates daily summary reports. The application runs as a command-line tool rather than a web server.
+
+## Technology Stack
+- **Framework**: NestJS v11 (latest)
+- **Language**: TypeScript
+- **Package Manager**: pnpm
+- **Testing**: Jest with e2e testing support
+- **Linting**: ESLint with Prettier
+- **Build Tool**: SWC for fast compilation
+- **APIs**: GitLab API, Slack API, Microsoft Teams API, Jira API
+
+## Project Structure
+```
+src/
+├── app.service.ts         # Main activity summary service
+├── app.module.ts          # Root module
+├── main.ts               # Command-line entry point
+└── config/
+    └── api.config.ts     # API configuration management
+```
+
+## Development Guidelines
+
+### Code Style & Architecture
+- Follow NestJS decorator-based architecture patterns
+- Use dependency injection throughout the application
+- Implement proper separation of concerns (services, modules)
+- Follow TypeScript best practices with strict typing
+- Use async/await for asynchronous operations
+- Implement proper error handling with NestJS exception filters
+- Focus on data processing and file generation rather than HTTP endpoints
+
+### File Naming Conventions
+- Use kebab-case for file names: `activity-summary.service.ts`
+- Use PascalCase for class names: `ActivitySummaryService`
+- Use camelCase for methods and properties
+- Suffix files appropriately: `.service.ts`, `.module.ts`, `.config.ts`
+
+### API Integration Patterns
+- Create separate services for each API (GitLab, Slack, Teams, Jira)
+- Use environment variables for API credentials
+- Implement proper rate limiting and error handling
+- Cache API responses when appropriate
+- Use TypeScript interfaces for API response types
+
+### Data Processing
+- Normalize data from different APIs into common ActivityData interface
+- Implement proper date handling and timezone considerations
+- Use efficient data structures for processing large datasets
+- Implement data validation and sanitization
+
+### File Output
+- Support multiple output formats (JSON, CSV, etc.)
+- Implement proper file writing with error handling
+- Use streaming for large datasets
+- Include metadata and summary statistics
+
+### Testing Strategy
+- Write unit tests for all services
+- Mock external API calls in tests
+- Test data processing logic thoroughly
+- Include integration tests for file generation
+
+### Security Considerations
+- Never commit API credentials to version control
+- Use environment variables for sensitive configuration
+- Implement proper token management
+- Validate all input data
+- Handle API rate limits gracefully
+
+### Performance & Monitoring
+- Implement proper logging with structured logs
+- Monitor API call performance
+- Use caching where appropriate
+- Implement retry logic for failed API calls
+- Track processing time and memory usage
+
+## Common Patterns
+
+### Service Pattern
+```typescript
+@Injectable()
+export class GitlabService {
+  constructor(private readonly configService: ConfigService) {}
+
+  async fetchActivities(date: Date): Promise<ActivityData[]> {
+    // Implementation with proper error handling
+  }
+}
+```
+
+### Configuration Pattern
+```typescript
+export interface ApiConfig {
+  gitlab: {
+    baseUrl: string;
+    accessToken: string;
+    projectIds?: string[];
+  };
+  jira: {
+    baseUrl: string;
+    email: string;
+    apiToken: string;
+    projectKeys?: string[];
+    issueTypes?: string[];
+  };
+  // ... other APIs
+}
+```
+
+### Data Processing Pattern
+```typescript
+export interface ActivityData {
+  id: string;
+  type: 'gitlab' | 'slack' | 'teams' | 'jira';
+  timestamp: Date;
+  title: string;
+  description?: string;
+  author?: string;
+  url?: string;
+  metadata?: Record<string, any>;
+}
+```
+
+## Development Commands
+- `pnpm run build` - Build the application
+- `pnpm run generate` - Run the activity summary generator
+- `pnpm run generate:dev` - Run in development mode
+- `pnpm run generate:today` - Generate summary for today
+- `pnpm run generate:week` - Generate summary for the last week
+- `pnpm run generate:month` - Generate summary for the last month
+- `pnpm run test` - Run unit tests
+- `pnpm run lint` - Run ESLint with auto-fix
+- `pnpm run format` - Format code with Prettier
+
+## Environment Setup
+- Use `.env` files for environment variables
+- Include API credentials for GitLab, Slack, Teams, and Jira
+- Never commit sensitive data to version control
+- Use different configurations for development and production
+
+## API Integration Requirements
+
+### GitLab API
+- Fetch commits, merge requests, issues, and comments
+- Support for multiple projects
+- Handle pagination properly
+- Use appropriate scopes for access tokens
+
+### Slack API
+- Fetch channel messages and reactions
+- Support for multiple channels
+- Handle rate limits and cursor-based pagination
+- Use bot tokens with appropriate scopes
+
+### Microsoft Teams API
+- Fetch channel messages and chat messages
+- Support for multiple teams and channels
+- Handle OAuth2 authentication flow
+- Use Microsoft Graph API endpoints
+
+### Jira API
+- Fetch issues, comments, and work logs
+- Support for multiple projects and issue types
+- Handle pagination and rate limiting
+- Use Basic Authentication with email and API token
+- Filter by date ranges and project keys
+
+## When Adding New Features
+1. Create appropriate services for new APIs
+2. Add comprehensive tests
+3. Update configuration management
+4. Follow the established data processing patterns
+5. Consider backward compatibility
+6. Add proper error handling
+7. Include input validation
+8. Update documentation
+
+## Code Quality Standards
+- Maintain high test coverage (>80%)
+- Use TypeScript strict mode
+- Follow ESLint rules
+- Use Prettier for consistent formatting
+- Write self-documenting code with clear naming
+- Add JSDoc comments for complex methods
+- Handle all potential error cases
+
+## Future Considerations
+- Plan for handling large datasets efficiently
+- Consider implementing a database for caching
+- Plan for API versioning and changes
+- Consider implementing a web interface for configuration
+- Plan for distributed processing if needed
+- Consider implementing real-time processing capabilities 

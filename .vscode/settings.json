@@ -1,0 +1,78 @@
+{
+  "typescript.preferences.includePackageJsonAutoImports": "on",
+  "typescript.suggest.autoImports": true,
+  "typescript.updateImportsOnFileMove.enabled": "always",
+  "editor.formatOnSave": true,
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": "explicit"
+  },
+  "eslint.validate": [
+    "javascript",
+    "javascriptreact",
+    "typescript",
+    "typescriptreact"
+  ],
+  "files.exclude": {
+    "**/node_modules": true,
+    "**/dist": true,
+    "**/.git": true,
+    "**/.DS_Store": true
+  },
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/dist": true,
+    "**/coverage": true
+  },
+  "files.watcherExclude": {
+    "**/node_modules/**": true,
+    "**/dist/**": true,
+    "**/.git/**": true
+  },
+  "typescript.preferences.importModuleSpecifier": "relative",
+  "typescript.suggest.paths": true,
+  "typescript.preferences.includePackageJsonAutoImports": "on",
+  "editor.tabSize": 2,
+  "editor.insertSpaces": true,
+  "editor.detectIndentation": false,
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true,
+  "files.trimFinalNewlines": true,
+  "emmet.includeLanguages": {
+    "typescript": "html"
+  },
+  "jest.autoRun": {
+    "watch": false,
+    "onSave": "test-file"
+  },
+  "jest.showCoverageOnLoad": true,
+  "jest.autoEnable": true,
+  "jest.jestCommandLine": "pnpm run test",
+  "jest.testExplorer": {
+    "enabled": true,
+    "showInlineError": true
+  },
+  "debug.console.fontSize": 12,
+  "debug.console.lineHeight": 18,
+  "debug.internalConsoleOptions": "neverOpen",
+  "terminal.integrated.fontSize": 12,
+  "terminal.integrated.lineHeight": 1.2,
+  "terminal.integrated.defaultProfile.osx": "zsh",
+  "terminal.integrated.shell.osx": "/bin/zsh",
+  "workbench.colorCustomizations": {
+    "debugToolBar.background": "#1e1e1e",
+    "debugToolBar.border": "#3c3c3c"
+  },
+  "files.associations": {
+    "*.spec.ts": "typescript",
+    "*.test.ts": "typescript"
+  },
+  "explorer.fileNesting.enabled": true,
+  "explorer.fileNesting.expand": false,
+  "explorer.fileNesting.patterns": {
+    "*.ts": "${capture}.js, ${capture}.js.map, ${capture}.d.ts",
+    "*.js": "${capture}.js.map, ${capture}.d.ts",
+    "package.json": "package-lock.json, yarn.lock, pnpm-lock.yaml, .npmrc, .yarnrc",
+    "tsconfig.json": "tsconfig.*.json",
+    ".env": ".env.*"
+  }
+}

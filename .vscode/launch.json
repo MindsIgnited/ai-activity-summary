@@ -1,0 +1,237 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug Activity Summary (Today)",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/src/main.ts",
+      "runtimeExecutable": "/Users/nic/.local/share/mise/installs/node/22.14.0/bin/node",
+      "runtimeArgs": [
+        "-r",
+        "ts-node/register",
+        "-r",
+        "tsconfig-paths/register"
+      ],
+      "args": [
+        "--period",
+        "today"
+      ],
+      "env": {
+        "NODE_ENV": "development",
+        "PATH": "/Users/nic/.local/share/mise/installs/node/22.14.0/bin:/Users/nic/.local/share/mise/installs/pnpm/9.15.5:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/Users/nic/Library/pnpm:/Users/nic/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/Users/nic/Library/Application Support/JetBrains/Toolbox/scripts"
+      },
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen",
+      "skipFiles": [
+        "<node_internals>/**"
+      ],
+      "sourceMaps": true,
+      "outFiles": [
+        "${workspaceFolder}/dist/**/*.js"
+      ],
+      "resolveSourceMapLocations": [
+        "${workspaceFolder}/**",
+        "!**/node_modules/**"
+      ]
+    },
+    {
+      "name": "Debug Activity Summary (Week)",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/src/main.ts",
+      "runtimeExecutable": "/Users/nic/.local/share/mise/installs/node/22.14.0/bin/node",
+      "runtimeArgs": [
+        "-r",
+        "ts-node/register",
+        "-r",
+        "tsconfig-paths/register"
+      ],
+      "args": [
+        "--period",
+        "week"
+      ],
+      "env": {
+        "NODE_ENV": "development",
+        "PATH": "/Users/nic/.local/share/mise/installs/node/22.14.0/bin:/Users/nic/.local/share/mise/installs/pnpm/9.15.5:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/Users/nic/Library/pnpm:/Users/nic/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/Users/nic/Library/Application Support/JetBrains/Toolbox/scripts"
+      },
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen",
+      "skipFiles": [
+        "<node_internals>/**"
+      ],
+      "sourceMaps": true,
+      "outFiles": [
+        "${workspaceFolder}/dist/**/*.js"
+      ],
+      "resolveSourceMapLocations": [
+        "${workspaceFolder}/**",
+        "!**/node_modules/**"
+      ]
+    },
+    {
+      "name": "Debug Activity Summary (Month)",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/src/main.ts",
+      "runtimeExecutable": "/Users/nic/.local/share/mise/installs/node/22.14.0/bin/node",
+      "runtimeArgs": [
+        "-r",
+        "ts-node/register",
+        "-r",
+        "tsconfig-paths/register"
+      ],
+      "args": [
+        "--period",
+        "month"
+      ],
+      "env": {
+        "NODE_ENV": "development",
+        "PATH": "/Users/nic/.local/share/mise/installs/node/22.14.0/bin:/Users/nic/.local/share/mise/installs/pnpm/9.15.5:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/Users/nic/Library/pnpm:/Users/nic/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/Users/nic/Library/Application Support/JetBrains/Toolbox/scripts"
+      },
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen",
+      "skipFiles": [
+        "<node_internals>/**"
+      ],
+      "sourceMaps": true,
+      "outFiles": [
+        "${workspaceFolder}/dist/**/*.js"
+      ],
+      "resolveSourceMapLocations": [
+        "${workspaceFolder}/**",
+        "!**/node_modules/**"
+      ]
+    },
+    {
+      "name": "Debug Activity Summary (Custom Range)",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/src/main.ts",
+      "runtimeExecutable": "/Users/nic/.local/share/mise/installs/node/22.14.0/bin/node",
+      "runtimeArgs": [
+        "-r",
+        "ts-node/register",
+        "-r",
+        "tsconfig-paths/register"
+      ],
+      "args": [
+        "--start-date",
+        "2024-01-01",
+        "--end-date",
+        "2024-01-31"
+      ],
+      "env": {
+        "NODE_ENV": "development",
+        "PATH": "/Users/nic/.local/share/mise/installs/node/22.14.0/bin:/Users/nic/.local/share/mise/installs/pnpm/9.15.5:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/Users/nic/Library/pnpm:/Users/nic/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/Users/nic/Library/Application Support/JetBrains/Toolbox/scripts"
+      },
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen",
+      "skipFiles": [
+        "<node_internals>/**"
+      ],
+      "sourceMaps": true,
+      "outFiles": [
+        "${workspaceFolder}/dist/**/*.js"
+      ],
+      "resolveSourceMapLocations": [
+        "${workspaceFolder}/**",
+        "!**/node_modules/**"
+      ]
+    },
+    {
+      "name": "Debug Activity Summary (With Output)",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/src/main.ts",
+      "runtimeExecutable": "/Users/nic/.local/share/mise/installs/node/22.14.0/bin/node",
+      "runtimeArgs": [
+        "-r",
+        "ts-node/register",
+        "-r",
+        "tsconfig-paths/register"
+      ],
+      "args": [
+        "--period",
+        "today",
+        "--output",
+        "./debug-output.json"
+      ],
+      "env": {
+        "NODE_ENV": "development",
+        "PATH": "/Users/nic/.local/share/mise/installs/node/22.14.0/bin:/Users/nic/.local/share/mise/installs/pnpm/9.15.5:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/Users/nic/Library/pnpm:/Users/nic/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/Users/nic/Library/Application Support/JetBrains/Toolbox/scripts"
+      },
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen",
+      "skipFiles": [
+        "<node_internals>/**"
+      ],
+      "sourceMaps": true,
+      "outFiles": [
+        "${workspaceFolder}/dist/**/*.js"
+      ],
+      "resolveSourceMapLocations": [
+        "${workspaceFolder}/**",
+        "!**/node_modules/**"
+      ]
+    },
+    {
+      "name": "Debug Tests",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/node_modules/.bin/jest",
+      "runtimeExecutable": "/Users/nic/.local/share/mise/installs/node/22.14.0/bin/node",
+      "args": [
+        "--runInBand",
+        "--no-cache"
+      ],
+      "env": {
+        "NODE_ENV": "test",
+        "PATH": "/Users/nic/.local/share/mise/installs/node/22.14.0/bin:/Users/nic/.local/share/mise/installs/pnpm/9.15.5:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/Users/nic/Library/pnpm:/Users/nic/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/Users/nic/Library/Application Support/JetBrains/Toolbox/scripts"
+      },
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen",
+      "skipFiles": [
+        "<node_internals>/**"
+      ],
+      "sourceMaps": true,
+      "outFiles": [
+        "${workspaceFolder}/dist/**/*.js"
+      ],
+      "resolveSourceMapLocations": [
+        "${workspaceFolder}/**",
+        "!**/node_modules/**"
+      ]
+    },
+    {
+      "name": "Debug Specific Test",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/node_modules/.bin/jest",
+      "runtimeExecutable": "/Users/nic/.local/share/mise/installs/node/22.14.0/bin/node",
+      "args": [
+        "--runInBand",
+        "--no-cache",
+        "--testNamePattern",
+        "AppService"
+      ],
+      "env": {
+        "NODE_ENV": "test",
+        "PATH": "/Users/nic/.local/share/mise/installs/node/22.14.0/bin:/Users/nic/.local/share/mise/installs/pnpm/9.15.5:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/Users/nic/Library/pnpm:/Users/nic/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/Users/nic/Library/Application Support/JetBrains/Toolbox/scripts"
+      },
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen",
+      "skipFiles": [
+        "<node_internals>/**"
+      ],
+      "sourceMaps": true,
+      "outFiles": [
+        "${workspaceFolder}/dist/**/*.js"
+      ],
+      "resolveSourceMapLocations": [
+        "${workspaceFolder}/**",
+        "!**/node_modules/**"
+      ]
+    }
+  ]
+}
