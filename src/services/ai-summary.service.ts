@@ -177,4 +177,65 @@ export class AiSummaryService {
     md += `*Generated on ${new Date().toISOString()}*\n`;
     return md;
   }
+
+  public generateTemplateSummary(activities: ActivityData[], date: string): string {
+    if (activities.length === 0) {
+      return `No activities recorded for ${date}.`;
+    }
+
+    const byType = this.groupByType(activities);
+    const byAuthor = this.groupByAuthor(activities);
+
+    let summary = `Daily Activity Summary for ${date}\n\n`;
+
+    // Overview
+    summary += `📊 Overview:\n`;
+    summary += `• Total activities: ${activities.length}\n`;
+    summary += `• Activity types: ${Object.keys(byType).join(', ')}\n`;
+    summary += `• Contributors: ${Object.keys(byAuthor).join(', ')}\n\n`;
+
+    // By type breakdown
+    summary += `📈 Activity Breakdown:\n`;
+    for (const [type, count] of Object.entries(byType)) {
+      const emoji = this.getTypeEmoji(type);
+      summary += `• ${emoji} ${type}: ${count} activities\n`;
+    }
+    summary += '\n';
+
+    // By author breakdown
+    summary += `👥 Contributor Activity:\n`;
+    for (const [author, count] of Object.entries(byAuthor)) {
+      summary += `• ${author}: ${count} activities\n`;
+    }
+    summary += '\n';
+
+    // Detailed activities
+    summary += `📝 Detailed Activities:\n`;
+    for (const activity of activities) {
+      const emoji = this.getTypeEmoji(activity.type);
+      const time = new Date(activity.timestamp).toLocaleTimeString();
+      summary += `• ${time} - ${emoji} ${activity.title}\n`;
+      if (activity.author) {
+        summary += `  👤 ${activity.author}\n`;
+      }
+      if (activity.description && activity.description.length > 100) {
+        summary += `  📄 ${activity.description.substring(0, 100)}...\n`;
+      } else if (activity.description) {
+        summary += `  📄 ${activity.description}\n`;
+      }
+      summary += '\n';
+    }
+
+    return summary;
+  }
+
+  public getTypeEmoji(type: string): string {
+    const emojis: Record<string, string> = {
+      gitlab: '🔧',
+      slack: '💬',
+      teams: '👥',
+      jira: '📋',
+    };
+    return emojis[type] || '📝';
+  }
 }
