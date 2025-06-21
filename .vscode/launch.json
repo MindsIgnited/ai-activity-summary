@@ -6,7 +6,7 @@
       "type": "node",
       "request": "launch",
       "program": "${workspaceFolder}/src/main.ts",
-      "runtimeExecutable": "/Users/nic/.local/share/mise/installs/node/22.14.0/bin/node",
+      "runtimeExecutable": "${env:HOME}/.local/share/mise/installs/node/22.14.0/bin/node",
       "runtimeArgs": [
         "-r",
         "ts-node/register",
@@ -19,7 +19,7 @@
       ],
       "env": {
         "NODE_ENV": "development",
-        "PATH": "/Users/nic/.local/share/mise/installs/node/22.14.0/bin:/Users/nic/.local/share/mise/installs/pnpm/9.15.5:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/Users/nic/Library/pnpm:/Users/nic/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/Users/nic/Library/Application Support/JetBrains/Toolbox/scripts"
+        "PATH": "${env:HOME}/.local/share/mise/installs/node/22.14.0/bin:${env:HOME}/.local/share/mise/installs/pnpm/9.15.5:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:${env:HOME}/Library/pnpm:${env:HOME}/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:${env:HOME}/Library/Application Support/JetBrains/Toolbox/scripts"
       },
       "console": "integratedTerminal",
       "internalConsoleOptions": "neverOpen",
@@ -40,7 +40,7 @@
       "type": "node",
       "request": "launch",
       "program": "${workspaceFolder}/src/main.ts",
-      "runtimeExecutable": "/Users/nic/.local/share/mise/installs/node/22.14.0/bin/node",
+      "runtimeExecutable": "${env:HOME}/.local/share/mise/installs/node/22.14.0/bin/node",
       "runtimeArgs": [
         "-r",
         "ts-node/register",
@@ -53,7 +53,7 @@
       ],
       "env": {
         "NODE_ENV": "development",
-        "PATH": "/Users/nic/.local/share/mise/installs/node/22.14.0/bin:/Users/nic/.local/share/mise/installs/pnpm/9.15.5:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/Users/nic/Library/pnpm:/Users/nic/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/Users/nic/Library/Application Support/JetBrains/Toolbox/scripts"
+        "PATH": "${env:HOME}/.local/share/mise/installs/node/22.14.0/bin:${env:HOME}/.local/share/mise/installs/pnpm/9.15.5:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:${env:HOME}/Library/pnpm:${env:HOME}/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:${env:HOME}/Library/Application Support/JetBrains/Toolbox/scripts"
       },
       "console": "integratedTerminal",
       "internalConsoleOptions": "neverOpen",
@@ -74,7 +74,7 @@
       "type": "node",
       "request": "launch",
       "program": "${workspaceFolder}/src/main.ts",
-      "runtimeExecutable": "/Users/nic/.local/share/mise/installs/node/22.14.0/bin/node",
+      "runtimeExecutable": "${env:HOME}/.local/share/mise/installs/node/22.14.0/bin/node",
       "runtimeArgs": [
         "-r",
         "ts-node/register",
@@ -87,7 +87,7 @@
       ],
       "env": {
         "NODE_ENV": "development",
-        "PATH": "/Users/nic/.local/share/mise/installs/node/22.14.0/bin:/Users/nic/.local/share/mise/installs/pnpm/9.15.5:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/Users/nic/Library/pnpm:/Users/nic/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/Users/nic/Library/Application Support/JetBrains/Toolbox/scripts"
+        "PATH": "${env:HOME}/.local/share/mise/installs/node/22.14.0/bin:${env:HOME}/.local/share/mise/installs/pnpm/9.15.5:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:${env:HOME}/Library/pnpm:${env:HOME}/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:${env:HOME}/Library/Application Support/JetBrains/Toolbox/scripts"
       },
       "console": "integratedTerminal",
       "internalConsoleOptions": "neverOpen",
@@ -108,7 +108,7 @@
       "type": "node",
       "request": "launch",
       "program": "${workspaceFolder}/src/main.ts",
-      "runtimeExecutable": "/Users/nic/.local/share/mise/installs/node/22.14.0/bin/node",
+      "runtimeExecutable": "${env:HOME}/.local/share/mise/installs/node/22.14.0/bin/node",
       "runtimeArgs": [
         "-r",
         "ts-node/register",
@@ -123,7 +123,7 @@
       ],
       "env": {
         "NODE_ENV": "development",
-        "PATH": "/Users/nic/.local/share/mise/installs/node/22.14.0/bin:/Users/nic/.local/share/mise/installs/pnpm/9.15.5:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/Users/nic/Library/pnpm:/Users/nic/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/Users/nic/Library/Application Support/JetBrains/Toolbox/scripts"
+        "PATH": "${env:HOME}/.local/share/mise/installs/node/22.14.0/bin:${env:HOME}/.local/share/mise/installs/pnpm/9.15.5:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:${env:HOME}/Library/pnpm:${env:HOME}/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:${env:HOME}/Library/Application Support/JetBrains/Toolbox/scripts"
       },
       "console": "integratedTerminal",
       "internalConsoleOptions": "neverOpen",
@@ -144,7 +144,7 @@
       "type": "node",
       "request": "launch",
       "program": "${workspaceFolder}/src/main.ts",
-      "runtimeExecutable": "/Users/nic/.local/share/mise/installs/node/22.14.0/bin/node",
+      "runtimeExecutable": "${env:HOME}/.local/share/mise/installs/node/22.14.0/bin/node",
       "runtimeArgs": [
         "-r",
         "ts-node/register",
@@ -159,7 +159,7 @@
       ],
       "env": {
         "NODE_ENV": "development",
-        "PATH": "/Users/nic/.local/share/mise/installs/node/22.14.0/bin:/Users/nic/.local/share/mise/installs/pnpm/9.15.5:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/Users/nic/Library/pnpm:/Users/nic/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/Users/nic/Library/Application Support/JetBrains/Toolbox/scripts"
+        "PATH": "${env:HOME}/.local/share/mise/installs/node/22.14.0/bin:${env:HOME}/.local/share/mise/installs/pnpm/9.15.5:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:${env:HOME}/Library/pnpm:${env:HOME}/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:${env:HOME}/Library/Application Support/JetBrains/Toolbox/scripts"
       },
       "console": "integratedTerminal",
       "internalConsoleOptions": "neverOpen",
@@ -180,14 +180,14 @@
       "type": "node",
       "request": "launch",
       "program": "${workspaceFolder}/node_modules/.bin/jest",
-      "runtimeExecutable": "/Users/nic/.local/share/mise/installs/node/22.14.0/bin/node",
+      "runtimeExecutable": "${env:HOME}/.local/share/mise/installs/node/22.14.0/bin/node",
       "args": [
         "--runInBand",
         "--no-cache"
       ],
       "env": {
         "NODE_ENV": "test",
-        "PATH": "/Users/nic/.local/share/mise/installs/node/22.14.0/bin:/Users/nic/.local/share/mise/installs/pnpm/9.15.5:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/Users/nic/Library/pnpm:/Users/nic/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/Users/nic/Library/Application Support/JetBrains/Toolbox/scripts"
+        "PATH": "${env:HOME}/.local/share/mise/installs/node/22.14.0/bin:${env:HOME}/.local/share/mise/installs/pnpm/9.15.5:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:${env:HOME}/Library/pnpm:${env:HOME}/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:${env:HOME}/Library/Application Support/JetBrains/Toolbox/scripts"
       },
       "console": "integratedTerminal",
       "internalConsoleOptions": "neverOpen",
@@ -208,7 +208,7 @@
       "type": "node",
       "request": "launch",
       "program": "${workspaceFolder}/node_modules/.bin/jest",
-      "runtimeExecutable": "/Users/nic/.local/share/mise/installs/node/22.14.0/bin/node",
+      "runtimeExecutable": "${env:HOME}/.local/share/mise/installs/node/22.14.0/bin/node",
       "args": [
         "--runInBand",
         "--no-cache",
@@ -217,7 +217,7 @@
       ],
       "env": {
         "NODE_ENV": "test",
-        "PATH": "/Users/nic/.local/share/mise/installs/node/22.14.0/bin:/Users/nic/.local/share/mise/installs/pnpm/9.15.5:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/Users/nic/Library/pnpm:/Users/nic/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/Users/nic/Library/Application Support/JetBrains/Toolbox/scripts"
+        "PATH": "${env:HOME}/.local/share/mise/installs/node/22.14.0/bin:${env:HOME}/.local/share/mise/installs/pnpm/9.15.5:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:${env:HOME}/Library/pnpm:${env:HOME}/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:${env:HOME}/Library/Application Support/JetBrains/Toolbox/scripts"
       },
       "console": "integratedTerminal",
       "internalConsoleOptions": "neverOpen",

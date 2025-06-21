@@ -260,6 +260,52 @@ $ pnpm run test:e2e
 - Configurable project keys and issue types
 - Basic authentication
 
+## AI Providers
+
+The application supports multiple AI providers for generating human-readable summaries:
+
+### OpenAI
+- GPT-4, GPT-3.5, and other OpenAI models
+- Requires OpenAI API key
+- High-quality, professional summaries
+
+### Anthropic (Claude)
+- Claude 3 Haiku, Sonnet, and Opus models
+- Requires Anthropic API key
+- Excellent for detailed analysis
+
+### Google Gemini
+- Gemini 1.5 Flash and other Gemini models
+- Requires Google API key
+- Fast and cost-effective
+
+### Ollama (Local)
+- Local LLM models (Llama2, Mistral, etc.)
+- No API key required
+- Privacy-focused, runs locally
+
+### Hugging Face
+- Various open-source models
+- Requires Hugging Face API key
+- Customizable model selection
+
+### Open WebUI
+- Local or remote Open WebUI instances
+- OpenAI-compatible API endpoint
+- Supports any model available in Open WebUI
+- Optional API key for authentication
+
+### Provider Selection
+The application automatically selects the first available provider, or you can specify one:
+```bash
+# Use specific provider
+pnpm run ai-summary:today --provider openai
+pnpm run ai-summary:today --provider openwebui
+
+# List available providers
+pnpm run ai-summary --list-providers
+```
+
 ## Configuration
 
 ### Enable/Disable Integrations

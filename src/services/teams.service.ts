@@ -187,7 +187,17 @@ export class TeamsService {
     });
 
     if (!deviceCodeResponse.ok) {
-      const errorText = await deviceCodeResponse.text();
+      let errorText = 'Unknown error';
+      try {
+        if (typeof deviceCodeResponse.text === 'function') {
+          errorText = await deviceCodeResponse.text();
+        } else {
+          errorText = `HTTP ${deviceCodeResponse.status} ${deviceCodeResponse.statusText}`;
+        }
+      } catch (textError) {
+        errorText = `HTTP ${deviceCodeResponse.status} ${deviceCodeResponse.statusText}`;
+      }
+
       this.logger.error(`Device code request failed: ${deviceCodeResponse.status} ${deviceCodeResponse.statusText}`);
       this.logger.error(`Error details: ${errorText}`);
       throw new Error(`Device code request failed: ${deviceCodeResponse.status} ${deviceCodeResponse.statusText}`);
@@ -271,7 +281,17 @@ export class TeamsService {
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
+      let errorText = 'Unknown error';
+      try {
+        if (typeof response.text === 'function') {
+          errorText = await response.text();
+        } else {
+          errorText = `HTTP ${response.status} ${response.statusText}`;
+        }
+      } catch (textError) {
+        errorText = `HTTP ${response.status} ${response.statusText}`;
+      }
+
       this.logger.error(`Token refresh failed: ${response.status} ${response.statusText}`);
       this.logger.error(`Error details: ${errorText}`);
       // Clear the refresh token so we can re-authenticate

@@ -55,7 +55,7 @@ Options:
   --ai-summary    Generate AI-powered human-readable summaries
   --date          Specific date for AI summary (YYYY-MM-DD format)
   --format        Output format for AI summaries: json, txt, or md (default: json)
-  --provider      AI provider to use: openai, anthropic, gemini, ollama, huggingface (auto-selects if not specified)
+  --provider      AI provider to use: openai, anthropic, gemini, ollama, huggingface, openwebui (auto-selects if not specified)
   --list-providers Show available AI providers
   --help, -h      Show this help message
 
@@ -73,6 +73,7 @@ Examples:
   pnpm start --ai-summary --start-date 2024-01-01 --end-date 2024-01-31 --format json
   pnpm start --ai-summary --date 2024-01-15 --provider openai --format txt
   pnpm start --ai-summary --period week --provider anthropic --format md
+  pnpm start --ai-summary --date 2024-01-15 --provider openwebui --format txt
   pnpm start --ai-summary --list-providers
     `);
     await app.close();

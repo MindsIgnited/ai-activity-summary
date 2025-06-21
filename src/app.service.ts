@@ -83,14 +83,6 @@ export class AppService {
     const activities: ActivityData[] = [];
 
     try {
-      // Fetch from GitLab API if enabled
-      if (this.apiConfig.gitlab.enabled) {
-        this.logger.debug('Fetching GitLab activities');
-        const gitlabActivities = await this.gitlabService.fetchActivities(date);
-        activities.push(...gitlabActivities);
-      } else {
-        this.logger.debug('GitLab integration is disabled');
-      }
 
       // Fetch from Slack API if enabled
       if (this.apiConfig.slack.enabled) {
@@ -117,6 +109,15 @@ export class AppService {
         activities.push(...jiraActivities);
       } else {
         this.logger.debug('Jira integration is disabled');
+      }
+
+      // Fetch from GitLab API if enabled
+      if (this.apiConfig.gitlab.enabled) {
+        this.logger.debug('Fetching GitLab activities');
+        const gitlabActivities = await this.gitlabService.fetchActivities(date);
+        activities.push(...gitlabActivities);
+      } else {
+        this.logger.debug('GitLab integration is disabled');
       }
 
     } catch (error) {

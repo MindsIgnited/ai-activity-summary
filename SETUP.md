@@ -128,9 +128,11 @@ This ensures your secrets stay local while allowing for flexible configuration m
 
 **Important Notes for GitLab API:**
 - The token needs appropriate scopes to read project data
+- **User-Specific Data**: The application will only fetch activities created by the user whose access token is being used
 - Project IDs can be found in the project's main page URL
 - If no projects are specified, the app will fetch from all accessible projects
 - Supports both GitLab.com and self-hosted GitLab instances
+- **Privacy**: Only your own commits, merge requests, issues, and comments will be included in the summary
 
 ### Slack API
 1. Go to https://api.slack.com/apps
@@ -146,9 +148,9 @@ This ensures your secrets stay local while allowing for flexible configuration m
 
 ### Microsoft Teams API
 
-To enable Microsoft Teams integration, you must register an application in Azure AD and grant the correct Microsoft Graph API permissions. You can choose between **Application permissions** (client credentials flow) or **Delegated permissions** (device code flow).
+The Microsoft Teams integration uses **delegated permissions** to access user-specific data securely. This approach ensures that only the authenticated user's activities are fetched, providing better privacy and security.
 
-#### Option 1: Application Permissions (Recommended for Server Applications)
+#### Setup Instructions
 
 1. **Register an Application in Azure AD**
    - Go to [Azure Portal > Azure Active Directory > App registrations](https://portal.azure.com/#blade/Microsoft_AAD_IAM/ActiveDirectoryMenuBlade/RegisteredApps)
@@ -164,16 +166,18 @@ To enable Microsoft Teams integration, you must register an application in Azure
    - Click **Add** and copy the value (you'll use this in `.env.local`)
 
 3. **Configure API Permissions**
-   - Go to **API permissions** > **Add a permission** > **Microsoft Graph** > **Application permissions**
+   - Go to **API permissions** > **Add a permission** > **Microsoft Graph** > **Delegated permissions**
    - Add the following permissions:
-     - `ChannelMessage.Read.All` (Read all channel messages)
-     - `Chat.Read.All` (Read all chat messages)
-     - `CallRecords.Read.All` (Read call records)
-     - `OnlineMeetings.Read.All` (Read online meetings)
      - `Calendars.Read` (Read user calendars)
-     - `User.Read.All` (Read all users' profiles)
-     - `Team.ReadBasic.All` (Read all teams' basic info)
+     - `Channel.ReadBasic.All` (Read the names and descriptions of channels)
+     - `ChannelMessage.Read.All` (Read user channel messages)
+     - `Chat.Read` (Read user chat messages)
+     - `ChatMember.Read` (Read the members of chats)
+     - `ChatMessage.Read` (Read user chat messages)
      - `Group.Read.All` (Read all groups)
+     - `Team.ReadBasic.All` (Read the names and descriptions of teams)
+     - `User.Read` (Sign in and read user profile)
+     - `User.Rea.All` (Read all users full profiles)
    - Click **Add permissions**
 
 4. **Grant Admin Consent**
@@ -186,62 +190,38 @@ To enable Microsoft Teams integration, you must register an application in Azure
      - `TEAMS_CLIENT_ID` = Application (client) ID
      - `TEAMS_CLIENT_SECRET` = Value from Certificates & secrets
      - `TEAMS_TENANT_ID` = Directory (tenant) ID
-     - `TEAMS_EMAIL` = The user email to filter activities for
-
-#### Option 2: Delegated Permissions (Recommended for User-Specific Data)
-
-1. **Register an Application in Azure AD**
-   - Follow the same steps as above for app registration
-
-2. **Create a Client Secret**
-   - Follow the same steps as above for client secret
-
-3. **Configure API Permissions**
-   - Go to **API permissions** > **Add a permission** > **Microsoft Graph** > **Delegated permissions**
-   - Add the following permissions:
-     - `Calendars.Read`
-     - `Channel.ReadBasic.All`
-     - `ChannelMessage.Read.All`
-     - `Group.Read.All`
-     - `Team.ReadBasic.All`
-     - `User.Read.All`
-     - `User.Read`
-   - Click **Add permissions**
-
-4. **Grant Admin Consent**
-   - In **API permissions**, click **Grant admin consent for [Your Tenant]**
-   - Confirm the consent
-
-5. **Configure Environment Variables**
-   - Same as above
+     - `TEAMS_EMAIL` = Your email address for authentication
 
 6. **Authentication Flow**
-   - The application will use device code flow for authentication
+   - The application uses device code flow for authentication
    - When you run the app, it will display a URL and code
    - Visit the URL, enter the code, and authenticate with your Microsoft account
    - The app will automatically refresh tokens as needed
 
-#### Configuration Notes
+#### Security and Privacy Benefits
 
-**For Application Permissions:**
-- The app uses the client credentials flow (application permissions)
-- Admin consent is required for most permissions
-- The app can access data across all users in the tenant, but will filter by `TEAMS_EMAIL`
-- No user interaction required during runtime
+**Delegated Permissions:**
+- **User-Specific Access**: Only the authenticated user's data is accessible
+- **No Cross-User Data**: Cannot access other users' Teams activities
+- **Secure Authentication**: Uses OAuth 2.0 device code flow
+- **Automatic Token Refresh**: Handles token expiration automatically
+- **Privacy Compliant**: Follows least-privilege access principles
 
-**For Delegated Permissions:**
-- The app uses device code flow for authentication
-- User interaction is required for initial authentication
-- The app accesses data on behalf of the authenticated user
-- More secure for user-specific data access
-- Tokens are automatically refreshed
+**Data Filtering:**
+- Only your own messages, calls, and calendar events are included
+- No access to other team members' private data
+- Respects Teams privacy settings and permissions
 
-**Troubleshooting:**
-- If you see 403 Forbidden errors, double-check that admin consent was granted and the correct permissions are present
-- For delegated permissions, ensure the user has access to the Teams data being requested
-- For more details, see the [Microsoft Graph permissions reference](https://learn.microsoft.com/en-us/graph/permissions-reference)
+#### Troubleshooting
 
-6. **(Optional) Restrict to Specific Channels**
+**Common Issues:**
+- **403 Forbidden**: Ensure admin consent was granted and permissions are correct
+- **Authentication Failed**: Check that the user has access to Teams data
+- **Token Expired**: The app should automatically refresh tokens
+
+**For more details, see the [Microsoft Graph permissions reference](https://learn.microsoft.com/en-us/graph/permissions-reference)**
+
+7. **(Optional) Restrict to Specific Channels**
    - Set `TEAMS_CHANNELS` to a comma-separated list of channel names
 
 ### Jira API
@@ -348,13 +328,14 @@ The application generates a JSON file with the following structure:
 
 ## GitLab Activity Types
 
-The GitLab integration tracks the following activities:
+The GitLab integration tracks the following activities for the authenticated user:
 
 ### Commits
 - Code commits with commit messages and author information
 - Direct links to commit details in GitLab
 - Project and branch information
 - Commit timestamps and short IDs
+- **User-Specific**: Only your own commits are included
 
 ### Merge Requests
 - Created, merged, and closed merge requests
@@ -362,6 +343,7 @@ The GitLab integration tracks the following activities:
 - Source and target branch details
 - Author and assignee information
 - Direct links to merge requests
+- **User-Specific**: Only merge requests you created are included
 
 ### Issues
 - Created and closed issues
@@ -369,32 +351,34 @@ The GitLab integration tracks the following activities:
 - Milestone information when available
 - Author and assignee details
 - Direct links to issues
+- **User-Specific**: Only issues you created are included
 
 ### Comments
 - Comments on commits, merge requests, and issues
 - Comment content and author information
 - Direct links to specific comments
 - Project context for each comment
+- **User-Specific**: Only comments you authored are included
 
 ## Teams Activity Types
 
-The Teams integration tracks the following activities for the specified user:
+The Teams integration tracks the following activities for the authenticated user:
 
 ### Messages
-- Channel messages sent by the specified user
+- Channel messages sent by the authenticated user
 - Message content, author, and timestamps
 - Direct links to messages in Teams
-- Filtered by `TEAMS_EMAIL` configuration
+- **User-Specific**: Only your own messages are included
 
 ### Calls
 - Teams call records where the user was organizer or participant
 - Call subject and organizer information
 - Join URLs for recorded calls
-- Filtered by `TEAMS_EMAIL` configuration
+- **User-Specific**: Only calls you organized or participated in
 
 ### Calendar Events
-- Calendar events from the specified user's calendar
+- Calendar events from the authenticated user's calendar
 - Event details, attendees, and duration
 - Online meeting information when available
 - Direct links to calendar events
-- User-specific calendar access via `TEAMS_EMAIL`
+- **User-Specific**: Only your own calendar events are included

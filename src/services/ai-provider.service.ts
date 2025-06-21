@@ -57,6 +57,12 @@ export class AiProviderService {
       this.logger.debug('Hugging Face provider registered');
     }
 
+    // Register Open WebUI provider
+    if (this.configService.get<string>('OPENWEBUI_BASE_URL')) {
+      this.providers.set('openwebui', new OpenWebUIProvider(this.configService));
+      this.logger.debug('Open WebUI provider registered');
+    }
+
     this.logger.log(`Registered ${this.providers.size} AI providers`);
   }
 
@@ -610,6 +616,303 @@ class HuggingFaceProvider implements AiProvider {
       this.logger.error('Hugging Face API request failed:', error);
       throw error;
     }
+  }
+
+  private buildPrompt(activities: ActivityData[], date: string): string {
+    const activityText = activities.map(activity => {
+      const time = new Date(activity.timestamp).toLocaleTimeString();
+      const type = activity.type.toUpperCase();
+      const author = activity.author ? ` (by ${activity.author})` : '';
+      const description = activity.description ? ` - ${activity.description.substring(0, 300)}` : '';
+      return `[${time}] ${type}: ${activity.title}${author}${description}`;
+    }).join('\n');
+
+    return `Create a comprehensive daily activity summary for ${date} based on the following activities:
+
+${activityText}
+
+Please provide a structured summary that includes:
+
+## 📊 Executive Summary
+- Total activities and key metrics
+- Most productive time periods
+- Primary focus areas
+
+## 🎯 Key Accomplishments
+- Major milestones achieved
+- Completed tasks and deliverables
+- Significant progress made
+
+## 🤝 Collaboration & Communication
+- Team interactions and meetings
+- Cross-functional work
+- Communication patterns
+
+## 📈 Productivity Insights
+- Time allocation analysis
+- Work patterns and trends
+- Efficiency observations
+
+## ⚠️ Areas of Attention
+- Potential blockers or delays
+- Items requiring follow-up
+- Areas needing support or resources
+
+## 🎯 Action Items & Recommendations
+- Next steps and priorities
+- Suggested improvements
+- Follow-up actions needed
+
+Keep the summary professional, actionable, and suitable for stakeholders. Use clear headings, bullet points, and concise language. Focus on insights that add value beyond just listing activities.`;
+  }
+}
+
+// Open WebUI Provider
+class OpenWebUIProvider implements AiProvider {
+  name = 'openwebui';
+  private readonly logger = new Logger(OpenWebUIProvider.name);
+
+  constructor(private readonly configService: ConfigService) { }
+
+  async generateSummary(activities: ActivityData[], date: string): Promise<string> {
+    const baseUrl = this.configService.get<string>('OPENWEBUI_BASE_URL') || 'http://localhost:8080';
+    const model = this.configService.get<string>('OPENWEBUI_MODEL') || 'llama2';
+    const apiKey = this.configService.get<string>('OPENWEBUI_API_KEY');
+
+    const prompt = this.buildPrompt(activities, date);
+    const systemPrompt = 'You are an expert productivity analyst who creates clear, professional daily activity summaries. Focus on extracting meaningful insights, identifying patterns, and highlighting key accomplishments. Structure your response in a scannable format with clear sections and actionable insights.';
+
+    // Define different endpoint configurations to try
+    const endpointConfigs = [
+      {
+        name: 'OpenAI-compatible chat completions (v1)',
+        url: `${baseUrl}/v1/chat/completions`,
+        method: 'POST',
+        body: {
+          model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: prompt },
+          ],
+          max_tokens: 1500,
+          temperature: 0.3,
+        },
+      },
+      {
+        name: 'OpenAI-compatible completions (v1)',
+        url: `${baseUrl}/v1/completions`,
+        method: 'POST',
+        body: {
+          model,
+          prompt: `${systemPrompt}\n\nUser: ${prompt}\n\nAssistant:`,
+          max_tokens: 1500,
+          temperature: 0.3,
+        },
+      },
+      {
+        name: 'OpenAI-compatible chat completions (api/v1)',
+        url: `${baseUrl}/api/v1/chat/completions`,
+        method: 'POST',
+        body: {
+          model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: prompt },
+          ],
+          max_tokens: 1500,
+          temperature: 0.3,
+        },
+      },
+      {
+        name: 'OpenAI-compatible completions (api/v1)',
+        url: `${baseUrl}/api/v1/completions`,
+        method: 'POST',
+        body: {
+          model,
+          prompt: `${systemPrompt}\n\nUser: ${prompt}\n\nAssistant:`,
+          max_tokens: 1500,
+          temperature: 0.3,
+        },
+      },
+      {
+        name: 'OpenAI-compatible chat completions (api)',
+        url: `${baseUrl}/api/chat/completions`,
+        method: 'POST',
+        body: {
+          model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: prompt },
+          ],
+          max_tokens: 1500,
+          temperature: 0.3,
+        },
+      },
+      {
+        name: 'OpenAI-compatible completions (api)',
+        url: `${baseUrl}/api/completions`,
+        method: 'POST',
+        body: {
+          model,
+          prompt: `${systemPrompt}\n\nUser: ${prompt}\n\nAssistant:`,
+          max_tokens: 1500,
+          temperature: 0.3,
+        },
+      },
+      {
+        name: 'OpenAI-compatible chat completions (root)',
+        url: `${baseUrl}/chat/completions`,
+        method: 'POST',
+        body: {
+          model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: prompt },
+          ],
+          max_tokens: 1500,
+          temperature: 0.3,
+        },
+      },
+      {
+        name: 'OpenAI-compatible completions (root)',
+        url: `${baseUrl}/completions`,
+        method: 'POST',
+        body: {
+          model,
+          prompt: `${systemPrompt}\n\nUser: ${prompt}\n\nAssistant:`,
+          max_tokens: 1500,
+          temperature: 0.3,
+        },
+      },
+      {
+        name: 'OpenWebUI chat endpoint (v1)',
+        url: `${baseUrl}/api/v1/chat`,
+        method: 'POST',
+        body: {
+          model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: prompt },
+          ],
+          stream: false,
+          options: {
+            temperature: 0.3,
+            top_p: 0.9,
+            max_tokens: 1500,
+          },
+        },
+      },
+      {
+        name: 'OpenWebUI generate endpoint (v1)',
+        url: `${baseUrl}/api/v1/generate`,
+        method: 'POST',
+        body: {
+          model,
+          prompt: `${systemPrompt}\n\nUser: ${prompt}\n\nAssistant:`,
+          stream: false,
+          options: {
+            temperature: 0.3,
+            top_p: 0.9,
+            max_tokens: 1500,
+          },
+        },
+      },
+      {
+        name: 'OpenWebUI legacy chat endpoint',
+        url: `${baseUrl}/api/chat`,
+        method: 'POST',
+        body: {
+          model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: prompt },
+          ],
+          stream: false,
+          options: {
+            temperature: 0.3,
+            top_p: 0.9,
+            max_tokens: 1500,
+          },
+        },
+      },
+      {
+        name: 'OpenWebUI legacy generate endpoint',
+        url: `${baseUrl}/api/generate`,
+        method: 'POST',
+        body: {
+          model,
+          prompt: `${systemPrompt}\n\nUser: ${prompt}\n\nAssistant:`,
+          stream: false,
+          options: {
+            temperature: 0.3,
+            top_p: 0.9,
+            max_tokens: 1500,
+          },
+        },
+      },
+    ];
+
+    let lastError: Error | null = null;
+
+    for (const config of endpointConfigs) {
+      try {
+        this.logger.debug(`Trying OpenWebUI endpoint: ${config.name}`);
+
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+        };
+
+        // Add API key if provided
+        if (apiKey) {
+          headers['Authorization'] = `Bearer ${apiKey}`;
+        }
+
+        const response = await fetch(config.url, {
+          method: config.method,
+          headers,
+          body: JSON.stringify(config.body),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => 'Unknown error');
+          throw new Error(`${response.status} ${response.statusText} - ${errorText}`);
+        }
+
+        const data = await response.json();
+
+        // Handle different response formats
+        let content: string;
+        if (data.choices?.[0]?.message?.content) {
+          // OpenAI-compatible format
+          content = data.choices[0].message.content;
+        } else if (data.response) {
+          // Ollama-compatible format
+          content = data.response;
+        } else if (data.content) {
+          // Direct content format
+          content = data.content;
+        } else if (data.text) {
+          // Text format
+          content = data.text;
+        } else if (typeof data === 'string') {
+          // String response
+          content = data;
+        } else {
+          throw new Error('Unexpected response format');
+        }
+
+        this.logger.debug(`Successfully used OpenWebUI endpoint: ${config.name}`);
+        return content.trim();
+      } catch (error) {
+        lastError = error as Error;
+        this.logger.debug(`Failed to use OpenWebUI endpoint ${config.name}: ${error}`);
+        continue;
+      }
+    }
+
+    // If all endpoints failed, throw the last error
+    this.logger.error('All OpenWebUI endpoints failed');
+    throw new Error(`All OpenWebUI endpoints failed. Last error: ${lastError?.message}`);
   }
 
   private buildPrompt(activities: ActivityData[], date: string): string {

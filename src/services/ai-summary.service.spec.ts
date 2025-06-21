@@ -1,6 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
-import { AiSummaryService, ActivityData } from './ai-summary.service';
+import { AiSummaryService } from './ai-summary.service';
+import { ActivityData } from './ai-provider.service';
+import { AiProviderService } from './ai-provider.service';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
@@ -53,6 +55,13 @@ describe('AiSummaryService', () => {
             get: jest.fn(),
           },
         },
+        {
+          provide: AiProviderService,
+          useValue: {
+            generateSummary: jest.fn().mockResolvedValue('Mock AI summary'),
+            getAvailableProviders: jest.fn().mockReturnValue(['openai']),
+          },
+        },
       ],
     }).compile();
 
@@ -87,8 +96,7 @@ describe('AiSummaryService', () => {
         'John Doe': 1,
         'Jane Smith': 1,
       });
-      expect(result?.aiSummary).toContain('Daily Activity Summary for 2025-06-15');
-      expect(result?.aiSummary).toContain('Total activities: 2');
+      expect(result?.aiSummary).toBe('Mock AI summary');
     });
 
     it('should return null for no activities', async () => {
@@ -271,6 +279,50 @@ describe('AiSummaryService', () => {
       expect((service as any).getTypeEmoji('teams')).toBe('👥');
       expect((service as any).getTypeEmoji('jira')).toBe('📋');
       expect((service as any).getTypeEmoji('unknown')).toBe('📝');
+    });
+  });
+
+  describe('getAvailableProviders', () => {
+    it('should return available providers', () => {
+      const providers = service.getAvailableProviders();
+      expect(providers).toContain('openai');
+      // Note: Other providers depend on environment variables being set
+    });
+  });
+
+  describe('Open WebUI Provider Integration', () => {
+    it('should handle Open WebUI provider when configured', async () => {
+      // Mock the aiProviderService to return openwebui as available
+      const mockAiProviderService = {
+        generateSummary: jest.fn().mockResolvedValue('Open WebUI generated summary'),
+        getAvailableProviders: jest.fn().mockReturnValue(['openwebui']),
+      };
+
+      // Create a new service instance with the mock
+      const testModule = await Test.createTestingModule({
+        providers: [
+          AiSummaryService,
+          {
+            provide: ConfigService,
+            useValue: { get: jest.fn() },
+          },
+          {
+            provide: AiProviderService,
+            useValue: mockAiProviderService,
+          },
+        ],
+      }).compile();
+
+      const testService = testModule.get<AiSummaryService>(AiSummaryService);
+
+      // Mock the loadActivitiesForDate method
+      jest.spyOn(testService as any, 'loadActivitiesForDate').mockResolvedValue(mockActivityData);
+
+      const result = await testService.generateDailySummary('2025-06-15', 'openwebui');
+
+      expect(result).toBeDefined();
+      expect(result?.aiSummary).toBe('Open WebUI generated summary');
+      expect(mockAiProviderService.generateSummary).toHaveBeenCalledWith(mockActivityData, '2025-06-15', 'openwebui');
     });
   });
 });

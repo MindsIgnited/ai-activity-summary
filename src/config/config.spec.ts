@@ -15,7 +15,7 @@ describe('Environment Configuration', () => {
     }).compile();
 
     const configService = module.get<ConfigService>(ConfigService);
-    
+
     // Test that the configuration is loaded
     expect(configService).toBeDefined();
   });
@@ -32,7 +32,7 @@ describe('Environment Configuration', () => {
     }).compile();
 
     const configService = module.get<ConfigService>(ConfigService);
-    
+
     // Should not throw an error even if files don't exist
     expect(configService).toBeDefined();
   });
@@ -44,6 +44,11 @@ describe('API Configuration', () => {
   beforeEach(() => {
     jest.resetModules();
     process.env = { ...originalEnv };
+    // Clear the specific enabled flags to test default behavior
+    delete process.env.GITLAB_ENABLED;
+    delete process.env.SLACK_ENABLED;
+    delete process.env.TEAMS_ENABLED;
+    delete process.env.JIRA_ENABLED;
   });
 
   afterAll(() => {
@@ -52,7 +57,7 @@ describe('API Configuration', () => {
 
   it('should enable integrations by default', () => {
     const config = getApiConfig();
-    
+
     expect(config.gitlab.enabled).toBe(true);
     expect(config.slack.enabled).toBe(true);
     expect(config.teams.enabled).toBe(true);
@@ -66,7 +71,7 @@ describe('API Configuration', () => {
     process.env.JIRA_ENABLED = 'false';
 
     const config = getApiConfig();
-    
+
     expect(config.gitlab.enabled).toBe(false);
     expect(config.slack.enabled).toBe(false);
     expect(config.teams.enabled).toBe(false);
@@ -80,7 +85,7 @@ describe('API Configuration', () => {
     process.env.JIRA_ENABLED = 'true';
 
     const config = getApiConfig();
-    
+
     expect(config.gitlab.enabled).toBe(true);
     expect(config.slack.enabled).toBe(true);
     expect(config.teams.enabled).toBe(true);
@@ -94,10 +99,10 @@ describe('API Configuration', () => {
     process.env.JIRA_ENABLED = 'true';
 
     const config = getApiConfig();
-    
+
     expect(config.gitlab.enabled).toBe(false);
     expect(config.slack.enabled).toBe(true);
     expect(config.teams.enabled).toBe(false);
     expect(config.jira.enabled).toBe(true);
   });
-}); 
+});
