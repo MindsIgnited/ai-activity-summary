@@ -1,6 +1,6 @@
 {
   "name": "activity-summary",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "A NestJS application that generates daily activity summaries from GitLab, Slack, and Teams APIs",
   "author": "",
   "private": true,
