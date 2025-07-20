@@ -177,7 +177,7 @@ The Microsoft Teams integration uses **delegated permissions** to access user-sp
      - `Group.Read.All` (Read all groups)
      - `Team.ReadBasic.All` (Read the names and descriptions of teams)
      - `User.Read` (Sign in and read user profile)
-     - `User.Rea.All` (Read all users full profiles)
+     - `User.Read.All` (Read all users full profiles)
    - Click **Add permissions**
 
 4. **Grant Admin Consent**
