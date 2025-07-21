@@ -326,6 +326,35 @@ JIRA_ENABLED=false
 2. `.env` (medium priority) - Default configuration
 3. System environment variables (lowest priority) - Runtime overrides
 
+### Output Directory Configuration
+
+The application uses separate directories for different types of output:
+
+- **Activity Data**: Raw activity data from APIs (default: `activities/`)
+- **AI Summaries**: Generated AI-powered summaries (default: `ai-summaries/`)
+
+You can customize these directories using environment variables:
+
+```bash
+# Customize output directories
+ACTIVITIES_OUTPUT_DIR=my-activities
+AI_SUMMARIES_OUTPUT_DIR=my-ai-summaries
+```
+
+#### Directory Structure
+
+```
+activities/                    # Raw activity data
+├── 2024-01-15.activity.json          # Single day summary
+├── 2024-01-01_2024-01-31.activity.json  # Date range summary
+└── all.activity.json          # Combined summary file
+
+ai-summaries/                 # AI-generated summaries
+├── ai-summary-20240115.txt   # Text format
+├── ai-summary-20240115.md    # Markdown format
+└── ai-summary-20240115.json  # JSON format
+```
+
 ## Output Format
 
 The application generates JSON summaries with the following structure:

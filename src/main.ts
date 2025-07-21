@@ -32,7 +32,8 @@ function calculateDates(period: string): { startDate: Date; endDate: Date } {
   }
 }
 
-const DEFAULT_OUTPUT_DIR = 'summaries';
+const DEFAULT_ACTIVITIES_DIR = process.env.ACTIVITIES_OUTPUT_DIR || 'activities';
+const DEFAULT_AI_SUMMARIES_DIR = process.env.AI_SUMMARIES_OUTPUT_DIR || 'ai-summaries';
 
 async function bootstrap() {
   // Configure logger levels based on LOG_LEVEL env
@@ -60,8 +61,8 @@ async function bootstrap() {
 Activity Summary Generator
 
 Usage:
-  pnpm start --period PERIOD [--output path/to/file]
-  pnpm start --start-date YYYY-MM-DD --end-date YYYY-MM-DD [--output path/to/file]
+  pnpm start --period PERIOD [--output directory]
+  pnpm start --start-date YYYY-MM-DD --end-date YYYY-MM-DD [--output directory]
 
 AI Summary Generation:
   pnpm start --ai-summary --date YYYY-MM-DD [--format json|txt|md] [--provider openai|anthropic|gemini|ollama|huggingface]
@@ -72,7 +73,7 @@ Options:
   --period        Time period: 'today', 'week', or 'month' (mutually exclusive with --start-date/--end-date)
   --start-date    Start date in YYYY-MM-DD format
   --end-date      End date in YYYY-MM-DD format
-  --output        Output file path (optional)
+  --output        Output directory path (optional, must be a directory)
   --ai-summary    Generate AI-powered human-readable summaries
   --date          Specific date for AI summary (YYYY-MM-DD format)
   --format        Output format for AI summaries: json, txt, or md (default: json)
@@ -80,10 +81,14 @@ Options:
   --list-providers Show available AI providers
   --help, -h      Show this help message
 
+Environment Variables:
+  ACTIVITIES_OUTPUT_DIR    Directory for activity data files (default: activities)
+  AI_SUMMARIES_OUTPUT_DIR Directory for AI summary files (default: ai-summaries)
+
 Examples:
   # Generate activity data
   pnpm start --period today
-  pnpm start --period week --output ./summary.json
+  pnpm start --period week --output ./my-activities
   pnpm start --period month
   pnpm start --start-date 2024-01-01 --end-date 2024-01-31
 
@@ -148,7 +153,7 @@ async function handleAiSummary(args: string[], aiSummaryService: AiSummaryServic
   }
 
   // Ensure output directory exists
-  await fs.mkdir(DEFAULT_OUTPUT_DIR, { recursive: true });
+  await fs.mkdir(DEFAULT_AI_SUMMARIES_DIR, { recursive: true });
 
   if (dateIndex !== -1) {
     // Single date AI summary
@@ -165,9 +170,9 @@ async function handleAiSummary(args: string[], aiSummaryService: AiSummaryServic
       if (outputPathArg) {
         filePath = await aiSummaryService.saveSummary(summary, format, outputPathArg);
       } else {
-        // Default file name: ai-output/YYYY-MM-DD.{format}
+        // Default file name: ai-summaries/YYYY-MM-DD.{format}
         const ext = format === 'json' ? 'json' : format;
-        filePath = path.join(DEFAULT_OUTPUT_DIR, `ai-summary-${date.replace(/-/g, '')}.${ext}`);
+        filePath = path.join(DEFAULT_AI_SUMMARIES_DIR, `ai-summary-${date.replace(/-/g, '')}.${ext}`);
         await aiSummaryService.saveSummary(summary, format, filePath);
       }
       console.log(`AI summary saved to: ${outputPathArg || filePath}`);
@@ -197,7 +202,7 @@ async function handleAiSummary(args: string[], aiSummaryService: AiSummaryServic
           filePath = await aiSummaryService.saveSummary(summary, format, outputPathArg);
         } else {
           const ext = format === 'json' ? 'json' : format;
-          filePath = path.join(DEFAULT_OUTPUT_DIR, `ai-summary-${summary.date.replace(/-/g, '')}.${ext}`);
+          filePath = path.join(DEFAULT_AI_SUMMARIES_DIR, `ai-summary-${summary.date.replace(/-/g, '')}.${ext}`);
           await aiSummaryService.saveSummary(summary, format, filePath);
         }
         console.log(`AI summary for ${summary.date} saved to: ${outputPathArg || filePath}`);
@@ -225,7 +230,7 @@ async function handleAiSummary(args: string[], aiSummaryService: AiSummaryServic
           filePath = await aiSummaryService.saveSummary(summary, format, outputPathArg);
         } else {
           const ext = format === 'json' ? 'json' : format;
-          filePath = path.join(DEFAULT_OUTPUT_DIR, `ai-summary-${summary.date.replace(/-/g, '')}.${ext}`);
+          filePath = path.join(DEFAULT_AI_SUMMARIES_DIR, `ai-summary-${summary.date.replace(/-/g, '')}.${ext}`);
           await aiSummaryService.saveSummary(summary, format, filePath);
         }
         console.log(`AI summary for ${summary.date} saved to: ${outputPathArg || filePath}`);
@@ -286,21 +291,50 @@ async function handleActivitySummary(args: string[], appService: AppService) {
   console.log(`Generating activity summary from ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`);
 
   // Ensure output directory exists
-  await fs.mkdir(DEFAULT_OUTPUT_DIR, { recursive: true });
+  await fs.mkdir(DEFAULT_ACTIVITIES_DIR, { recursive: true });
 
-  // Generate summary
-  let outputPath: string | undefined = outputPathArg;
-  if (!outputPathArg) {
-    // Default file name: ai-output/YYYY-MM-DD.json or ai-output/YYYY-MM-DD_YYYY-MM-DD.json
-    if (startDate.toISOString().split('T')[0] === endDate.toISOString().split('T')[0]) {
-      outputPath = path.join(DEFAULT_OUTPUT_DIR, `${startDate.toISOString().split('T')[0]}.json`);
-    } else {
-      outputPath = path.join(
-        DEFAULT_OUTPUT_DIR,
-        `${startDate.toISOString().split('T')[0]}_${endDate.toISOString().split('T')[0]}.json`
-      );
+  // Validate output path is a directory if provided
+  let outputDir: string;
+  if (outputPathArg) {
+    // Check if the path looks like a file (has an extension)
+    if (path.extname(outputPathArg) !== '') {
+      throw new Error('--output must specify a directory path, not a file');
     }
+
+    // Check if the path exists and is a directory, or create it
+    try {
+      const stats = await fs.stat(outputPathArg);
+      if (!stats.isDirectory()) {
+        throw new Error('--output must specify a directory path, not a file');
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        // Directory doesn't exist, create it
+        await fs.mkdir(outputPathArg, { recursive: true });
+      } else if ((error as Error).message.includes('directory path')) {
+        // Re-throw our custom error
+        throw error;
+      } else {
+        throw new Error('--output must specify a directory path, not a file');
+      }
+    }
+    outputDir = outputPathArg;
+  } else {
+    outputDir = DEFAULT_ACTIVITIES_DIR;
   }
+
+  // Generate summary with standardized filename
+  const startDateStr = startDate.toISOString().split('T')[0];
+  const endDateStr = endDate.toISOString().split('T')[0];
+
+  let filename: string;
+  if (startDateStr === endDateStr) {
+    filename = `${startDateStr}.activity.json`;
+  } else {
+    filename = `${startDateStr}_${endDateStr}.activity.json`;
+  }
+
+  const outputPath = path.join(outputDir, filename);
 
   const summaries = await appService.generateActivitySummary(startDate, endDate, outputPath);
 
@@ -314,9 +348,7 @@ async function handleActivitySummary(args: string[], appService: AppService) {
   console.log(`Most Active Day: ${stats.mostActiveDay}`);
   console.log(`Most Active Author: ${stats.mostActiveAuthor || 'N/A'}`);
 
-  if (outputPath) {
-    console.log(`\nSummary written to: ${outputPath}`);
-  }
+  console.log(`\nActivity data written to: ${outputPath}`);
 }
 
 bootstrap();

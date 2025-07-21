@@ -139,19 +139,19 @@ describe('AiSummaryService', () => {
         ],
       };
 
-      mockFs.readdir.mockResolvedValue(['gitlab.summary.json', 'teams.summary.json'] as any);
+      mockFs.readdir.mockResolvedValue(['gitlab.activity.json', 'teams.activity.json'] as any);
       mockFs.readFile.mockResolvedValue(JSON.stringify(mockFileData));
 
       const result = await (service as any).loadActivitiesForDate('2025-06-15');
 
       // Since both files return the same activities, expect the result to be mockActivityData twice
       expect(result).toEqual([...mockActivityData, ...mockActivityData]);
-      expect(mockFs.readdir).toHaveBeenCalledWith(expect.stringContaining('output'));
+      expect(mockFs.readdir).toHaveBeenCalledWith(expect.stringContaining('activities'));
       expect(mockFs.readFile).toHaveBeenCalledTimes(2);
     });
 
     it('should handle missing files gracefully', async () => {
-      mockFs.readdir.mockResolvedValue(['gitlab.summary.json'] as any);
+      mockFs.readdir.mockResolvedValue(['gitlab.activity.json'] as any);
       mockFs.readFile.mockRejectedValue(new Error('File not found'));
 
       const result = await (service as any).loadActivitiesForDate('2025-06-15');

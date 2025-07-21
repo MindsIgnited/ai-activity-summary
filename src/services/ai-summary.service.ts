@@ -86,11 +86,12 @@ export class AiSummaryService {
 
   private async loadActivitiesForDate(date: string): Promise<ActivityData[]> {
     const activities: ActivityData[] = [];
-    const outputDir = path.join(process.cwd(), 'output');
+    const activitiesDir = process.env.ACTIVITIES_OUTPUT_DIR || 'activities';
+    const outputDir = path.join(process.cwd(), activitiesDir);
 
     try {
       const files = await fs.readdir(outputDir);
-      const jsonFiles = files.filter(file => file.endsWith('.summary.json'));
+      const jsonFiles = files.filter(file => file.endsWith('.activity.json'));
 
       for (const file of jsonFiles) {
         try {
@@ -110,7 +111,7 @@ export class AiSummaryService {
         }
       }
     } catch (error) {
-      this.logger.error('Failed to read output directory:', error);
+      this.logger.error('Failed to read activities directory:', error);
     }
 
     return activities;
@@ -141,7 +142,8 @@ export class AiSummaryService {
   }
 
   async saveSummary(summary: DailySummaryOutput, format: 'json' | 'txt' | 'md' = 'json', outputPath?: string): Promise<string> {
-    const outputDir = path.join(process.cwd(), 'output');
+    const aiSummariesDir = process.env.AI_SUMMARIES_OUTPUT_DIR || 'ai-summaries';
+    const outputDir = path.join(process.cwd(), aiSummariesDir);
     const dateStr = summary.date.replace(/-/g, '');
     let filename: string;
     let content: string;
