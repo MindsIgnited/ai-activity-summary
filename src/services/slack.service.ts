@@ -36,7 +36,7 @@ export class SlackService {
   private readonly logger = new Logger(SlackService.name);
   private userCache: Record<string, SlackUser> = {};
 
-  constructor(private readonly configService: ConfigService) {}
+  constructor(private readonly configService: ConfigService) { }
 
   async fetchActivities(date: Date): Promise<ActivityData[]> {
     if (!this.isConfigured()) {
@@ -102,17 +102,27 @@ export class SlackService {
       url.searchParams.set('limit', limit.toString());
       if (cursor) url.searchParams.set('cursor', cursor);
 
-      const response = await this.makeRequest(url.toString());
-      if (!response.ok) {
-        this.logger.warn(`Slack API error: ${response.error}`);
-        break;
+      const start = Date.now();
+      this.logger.verbose(`[TRACE] GET ${url} - sending request`);
+      try {
+        const response = await this.makeRequest(url.toString());
+        const duration = Date.now() - start;
+        this.logger.verbose(`[TRACE] GET ${url} - status ${response.status} (${duration}ms)`);
+        if (!response.ok) {
+          this.logger.warn(`Slack API error: ${response.error}`);
+          break;
+        }
+        const batch = (response.messages || []).map((msg: any) => ({ ...msg, channel }));
+        messages.push(...batch);
+        hasMore = response.has_more;
+        cursor = response.response_metadata?.next_cursor;
+        // Slack rate limit: 1 request per second for history
+        if (hasMore) await new Promise(res => setTimeout(res, 1100));
+      } catch (error) {
+        const duration = Date.now() - start;
+        this.logger.error(`[TRACE] GET ${url} - ERROR after ${duration}ms: ${error}`);
+        throw error;
       }
-      const batch = (response.messages || []).map((msg: any) => ({ ...msg, channel }));
-      messages.push(...batch);
-      hasMore = response.has_more;
-      cursor = response.response_metadata?.next_cursor;
-      // Slack rate limit: 1 request per second for history
-      if (hasMore) await new Promise(res => setTimeout(res, 1100));
     }
     return messages;
   }
@@ -120,10 +130,20 @@ export class SlackService {
   private async fetchUser(userId: string): Promise<SlackUser | undefined> {
     if (this.userCache[userId]) return this.userCache[userId];
     const url = `https://slack.com/api/users.info?user=${userId}`;
-    const response = await this.makeRequest(url);
-    if (response.ok && response.user) {
-      this.userCache[userId] = response.user;
-      return response.user;
+    const start = Date.now();
+    this.logger.verbose(`[TRACE] GET ${url} - sending request`);
+    try {
+      const response = await this.makeRequest(url);
+      const duration = Date.now() - start;
+      this.logger.verbose(`[TRACE] GET ${url} - status ${response.status} (${duration}ms)`);
+      if (response.ok && response.user) {
+        this.userCache[userId] = response.user;
+        return response.user;
+      }
+    } catch (error) {
+      const duration = Date.now() - start;
+      this.logger.error(`[TRACE] GET ${url} - ERROR after ${duration}ms: ${error}`);
+      throw error;
     }
     return undefined;
   }
@@ -169,13 +189,23 @@ export class SlackService {
   }
 
   private async makeRequest(url: string): Promise<any> {
-    const response = await fetch(url, {
-      headers: {
-        'Authorization': `Bearer ${this.getBotToken()}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Accept': 'application/json',
-      },
-    });
-    return response.json();
+    const start = Date.now();
+    this.logger.verbose(`[TRACE] POST ${url} - sending request`);
+    try {
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${this.getBotToken()}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Accept': 'application/json',
+        },
+      });
+      const duration = Date.now() - start;
+      this.logger.verbose(`[TRACE] POST ${url} - status ${response.status} (${duration}ms)`);
+      return response.json();
+    } catch (error) {
+      const duration = Date.now() - start;
+      this.logger.error(`[TRACE] POST ${url} - ERROR after ${duration}ms: ${error}`);
+      throw error;
+    }
   }
-} 
+}

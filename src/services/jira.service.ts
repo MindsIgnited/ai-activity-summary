@@ -138,14 +138,11 @@ export class JiraService {
     const baseUrl = this.configService.get<string>('JIRA_BASE_URL');
     const url = `${baseUrl}/rest/api/3/search`;
 
-    const response = await this.makeRequest(url, {
-      method: 'POST',
-      body: JSON.stringify({
-        jql,
-        maxResults: 100,
-        fields: ['summary', 'description', 'assignee', 'reporter', 'status', 'issuetype', 'project', 'created', 'updated'],
-        expand: ['changelog']
-      })
+    const response = await this.makeRequest(url, 'POST', {
+      jql,
+      maxResults: 100,
+      fields: ['summary', 'description', 'assignee', 'reporter', 'status', 'issuetype', 'project', 'created', 'updated'],
+      expand: ['changelog']
     });
 
     return response.issues || [];
@@ -233,26 +230,35 @@ export class JiraService {
     return jql;
   }
 
-  private async makeRequest(url: string, options: RequestInit = {}): Promise<any> {
+  private async makeRequest(url: string, method: string = 'GET', body?: any): Promise<any> {
     const email = this.configService.get<string>('JIRA_EMAIL');
     const apiToken = this.configService.get<string>('JIRA_API_TOKEN');
-    const auth = Buffer.from(`${email}:${apiToken}`).toString('base64');
-
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        'Authorization': `Basic ${auth}`,
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`Jira API request failed: ${response.status} ${response.statusText}`);
+    const headers: Record<string, string> = {
+      'Authorization': 'Basic ' + Buffer.from(`${email}:${apiToken}`).toString('base64'),
+      'Accept': 'application/json',
+    };
+    if (body) {
+      headers['Content-Type'] = 'application/json';
     }
-
-    return response.json();
+    const start = Date.now();
+    this.logger.verbose(`[TRACE] ${method} ${url} - sending request`);
+    try {
+      const response = await fetch(url, {
+        method,
+        headers,
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      const duration = Date.now() - start;
+      this.logger.verbose(`[TRACE] ${method} ${url} - status ${response.status} (${duration}ms)`);
+      if (!response.ok) {
+        throw new Error(`Jira API request failed: ${response.status} ${response.statusText}`);
+      }
+      return response.json();
+    } catch (error) {
+      const duration = Date.now() - start;
+      this.logger.error(`[TRACE] ${method} ${url} - ERROR after ${duration}ms: ${error}`);
+      throw error;
+    }
   }
 
   private createIssueActivity(issue: JiraIssue, action: string): ActivityData {

@@ -432,19 +432,26 @@ export class GitLabService {
 
   private async makeRequest(url: string): Promise<any> {
     const accessToken = this.configService.get<string>('GITLAB_ACCESS_TOKEN');
-
-    const response = await fetch(url, {
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Accept': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`GitLab API request failed: ${response.status} ${response.statusText}`);
+    const start = Date.now();
+    this.logger.verbose(`[TRACE] GET ${url} - sending request`);
+    try {
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Accept': 'application/json',
+        },
+      });
+      const duration = Date.now() - start;
+      this.logger.verbose(`[TRACE] GET ${url} - status ${response.status} (${duration}ms)`);
+      if (!response.ok) {
+        throw new Error(`GitLab API request failed: ${response.status} ${response.statusText}`);
+      }
+      return response.json();
+    } catch (error) {
+      const duration = Date.now() - start;
+      this.logger.error(`[TRACE] GET ${url} - ERROR after ${duration}ms: ${error}`);
+      throw error;
     }
-
-    return response.json();
   }
 
   private createCommitActivity(commit: GitLabCommit): ActivityData {

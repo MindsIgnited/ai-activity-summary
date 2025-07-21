@@ -457,61 +457,71 @@ export class TeamsService {
 
     this.logger.debug(`Making Graph API request to: ${url}`);
 
-    const response = await fetch(url, {
-      headers: {
-        'Authorization': `Bearer ${this.accessToken}`,
-        'Accept': 'application/json',
-      },
-    });
+    const start = Date.now();
+    this.logger.verbose(`[TRACE] GET ${url} - sending request`);
+    try {
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${this.accessToken}`,
+          'Accept': 'application/json',
+        },
+      });
+      const duration = Date.now() - start;
+      this.logger.verbose(`[TRACE] GET ${url} - status ${response.status} (${duration}ms)`);
 
-    if (!response.ok) {
-      let errorDetails = '';
-      try {
-        const errorResponse = await response.json();
-        errorDetails = JSON.stringify(errorResponse);
-      } catch {
-        errorDetails = await response.text();
-      }
-
-      this.logger.error(`Graph API request failed: ${response.status} ${response.statusText}`);
-      this.logger.error(`URL: ${url}`);
-      this.logger.error(`Error details: ${errorDetails}`);
-
-      if (response.status === 401) {
-        // Token might be expired, try to refresh
-        this.logger.debug('Token expired, attempting to refresh...');
-        this.accessToken = null;
-        await this.refreshAccessToken();
-
-        // Retry the request
-        const retryResponse = await fetch(url, {
-          headers: {
-            'Authorization': `Bearer ${this.accessToken}`,
-            'Accept': 'application/json',
-          },
-        });
-
-        if (!retryResponse.ok) {
-          let retryErrorDetails = '';
-          try {
-            const retryErrorResponse = await retryResponse.json();
-            retryErrorDetails = JSON.stringify(retryErrorResponse);
-          } catch {
-            retryErrorDetails = await retryResponse.text();
-          }
-
-          this.logger.error(`Retry request also failed: ${retryResponse.status} ${retryResponse.statusText}`);
-          this.logger.error(`Retry error details: ${retryErrorDetails}`);
-          throw new Error(`Teams API request failed: ${retryResponse.status} ${retryResponse.statusText}`);
+      if (!response.ok) {
+        let errorDetails = '';
+        try {
+          const errorResponse = await response.json();
+          errorDetails = JSON.stringify(errorResponse);
+        } catch {
+          errorDetails = await response.text();
         }
 
-        return retryResponse.json();
+        this.logger.error(`Graph API request failed: ${response.status} ${response.statusText}`);
+        this.logger.error(`URL: ${url}`);
+        this.logger.error(`Error details: ${errorDetails}`);
+
+        if (response.status === 401) {
+          // Token might be expired, try to refresh
+          this.logger.debug('Token expired, attempting to refresh...');
+          this.accessToken = null;
+          await this.refreshAccessToken();
+
+          // Retry the request
+          const retryResponse = await fetch(url, {
+            headers: {
+              'Authorization': `Bearer ${this.accessToken}`,
+              'Accept': 'application/json',
+            },
+          });
+
+          if (!retryResponse.ok) {
+            let retryErrorDetails = '';
+            try {
+              const retryErrorResponse = await retryResponse.json();
+              retryErrorDetails = JSON.stringify(retryErrorResponse);
+            } catch {
+              retryErrorDetails = await retryResponse.text();
+            }
+
+            this.logger.error(`Retry request also failed: ${retryResponse.status} ${retryResponse.statusText}`);
+            this.logger.error(`Retry error details: ${retryErrorDetails}`);
+            throw new Error(`Teams API request failed: ${retryResponse.status} ${retryResponse.statusText}`);
+          }
+
+          return retryResponse.json();
+        }
+
+        throw new Error(`Teams API request failed: ${response.status} ${response.statusText}`);
       }
 
-      throw new Error(`Teams API request failed: ${response.status} ${response.statusText}`);
+      return response.json();
+    } catch (error) {
+      const duration = Date.now() - start;
+      this.logger.error(`[TRACE] GET ${url} - ERROR after ${duration}ms: ${error}`);
+      throw error;
     }
-
-    return response.json();
   }
 
   private createMessageActivity(message: TeamsMessage): ActivityData {

@@ -197,6 +197,8 @@ class OpenAiProvider implements AiProvider {
     const prompt = this.buildPrompt(activities, date);
 
     try {
+      const start = Date.now();
+      this.logger.verbose(`[TRACE] POST ${baseUrl}/chat/completions - sending request`);
       const response = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
@@ -219,6 +221,8 @@ class OpenAiProvider implements AiProvider {
           temperature: 0.3,
         }),
       });
+      const duration = Date.now() - start;
+      this.logger.verbose(`[TRACE] POST ${baseUrl}/chat/completions - status ${response.status} (${duration}ms)`);
 
       if (!response.ok) {
         throw new Error(`OpenAI API error: ${response.status} ${response.statusText}`);
@@ -299,6 +303,8 @@ class AnthropicProvider implements AiProvider {
     const prompt = this.buildPrompt(activities, date);
 
     try {
+      const start = Date.now();
+      this.logger.verbose(`[TRACE] POST https://api.anthropic.com/v1/messages - sending request`);
       const response = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
@@ -318,6 +324,8 @@ class AnthropicProvider implements AiProvider {
           ],
         }),
       });
+      const duration = Date.now() - start;
+      this.logger.verbose(`[TRACE] POST https://api.anthropic.com/v1/messages - status ${response.status} (${duration}ms)`);
 
       if (!response.ok) {
         throw new Error(`Anthropic API error: ${response.status} ${response.statusText}`);
@@ -398,6 +406,8 @@ class GeminiProvider implements AiProvider {
     const prompt = this.buildPrompt(activities, date);
 
     try {
+      const start = Date.now();
+      this.logger.verbose(`[TRACE] POST https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey} - sending request`);
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: {
@@ -419,6 +429,8 @@ class GeminiProvider implements AiProvider {
           },
         }),
       });
+      const duration = Date.now() - start;
+      this.logger.verbose(`[TRACE] POST https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey} - status ${response.status} (${duration}ms)`);
 
       if (!response.ok) {
         throw new Error(`Google Gemini API error: ${response.status} ${response.statusText}`);
@@ -495,6 +507,8 @@ class OllamaProvider implements AiProvider {
     const prompt = this.buildPrompt(activities, date);
 
     try {
+      const start = Date.now();
+      this.logger.verbose(`[TRACE] POST ${baseUrl}/api/generate - sending request`);
       const response = await fetch(`${baseUrl}/api/generate`, {
         method: 'POST',
         headers: {
@@ -510,6 +524,8 @@ class OllamaProvider implements AiProvider {
           },
         }),
       });
+      const duration = Date.now() - start;
+      this.logger.verbose(`[TRACE] POST ${baseUrl}/api/generate - status ${response.status} (${duration}ms)`);
 
       if (!response.ok) {
         throw new Error(`Ollama API error: ${response.status} ${response.statusText}`);
@@ -590,6 +606,8 @@ class HuggingFaceProvider implements AiProvider {
     const prompt = this.buildPrompt(activities, date);
 
     try {
+      const start = Date.now();
+      this.logger.verbose(`[TRACE] POST https://api-inference.huggingface.co/models/${model} - sending request`);
       const response = await fetch(`https://api-inference.huggingface.co/models/${model}`, {
         method: 'POST',
         headers: {
@@ -605,6 +623,8 @@ class HuggingFaceProvider implements AiProvider {
           },
         }),
       });
+      const duration = Date.now() - start;
+      this.logger.verbose(`[TRACE] POST https://api-inference.huggingface.co/models/${model} - status ${response.status} (${duration}ms)`);
 
       if (!response.ok) {
         throw new Error(`Hugging Face API error: ${response.status} ${response.statusText}`);
@@ -867,11 +887,15 @@ class OpenWebUIProvider implements AiProvider {
           headers['Authorization'] = `Bearer ${apiKey}`;
         }
 
+        const start = Date.now();
+        this.logger.verbose(`[TRACE] ${config.method || 'POST'} ${config.url || baseUrl} - sending request`);
         const response = await fetch(config.url, {
           method: config.method,
           headers,
           body: JSON.stringify(config.body),
         });
+        const duration = Date.now() - start;
+        this.logger.verbose(`[TRACE] ${config.method || 'POST'} ${config.url || baseUrl} - status ${response.status} (${duration}ms)`);
 
         if (!response.ok) {
           const errorText = await response.text().catch(() => 'Unknown error');

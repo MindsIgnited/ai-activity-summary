@@ -49,6 +49,21 @@ The application supports multiple environment files with the following precedenc
    LOG_LEVEL=info
    ```
 
+### Enabling Trace-Level Logging
+
+To enable detailed trace-level logging for all network requests (including all API calls to GitLab, Slack, Teams, Jira, and AI providers), set the following in your `.env.local` or `.env` file:
+
+```bash
+LOG_LEVEL=verbose
+```
+
+With `LOG_LEVEL=verbose`, you will see `[TRACE]` logs in the console for every network request, including:
+- When a request is sent (method, URL)
+- When a response is received (status, duration in ms)
+- Any errors, with full context and duration
+
+This is useful for debugging performance issues, slow endpoints, or network failures. For normal operation, you may want to set `LOG_LEVEL=info` or higher to reduce log verbosity.
+
 ## Integration Configuration
 
 ### Enabling/Disabling Integrations
