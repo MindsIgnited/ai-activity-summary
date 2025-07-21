@@ -83,7 +83,6 @@ export class AppService {
     const activities: ActivityData[] = [];
 
     try {
-
       // Fetch from Slack API if enabled
       if (this.apiConfig.slack.enabled) {
         this.logger.debug('Fetching Slack activities');
@@ -114,8 +113,27 @@ export class AppService {
       // Fetch from GitLab API if enabled
       if (this.apiConfig.gitlab.enabled) {
         this.logger.debug('Fetching GitLab activities');
-        const gitlabActivities = await this.gitlabService.fetchActivities(date);
-        activities.push(...gitlabActivities);
+        // Only fetch commits if enabled
+        if (this.apiConfig.gitlab.fetchCommits !== false) {
+          this.logger.debug('Fetching GitLab commits');
+          const gitlabCommits = await this.gitlabService.fetchCommits(date, date);
+          activities.push(...gitlabCommits.map(commit => this.gitlabService.createCommitActivity(commit)));
+        } else {
+          this.logger.debug('Skipping GitLab commits due to config');
+        }
+        // Always fetch merge requests and issues
+        const gitlabMergeRequests = await this.gitlabService.fetchMergeRequests(date, date);
+        activities.push(...gitlabMergeRequests.map(mr => this.gitlabService.createMergeRequestActivity(mr)));
+        const gitlabIssues = await this.gitlabService.fetchIssues(date, date);
+        activities.push(...gitlabIssues.map(issue => this.gitlabService.createIssueActivity(issue)));
+        // Only fetch comments if enabled
+        if (this.apiConfig.gitlab.fetchComments !== false) {
+          this.logger.debug('Fetching GitLab comments');
+          const gitlabComments = await this.gitlabService.fetchComments(date, date);
+          activities.push(...gitlabComments.map(comment => this.gitlabService.createCommentActivity(comment)));
+        } else {
+          this.logger.debug('Skipping GitLab comments due to config');
+        }
       } else {
         this.logger.debug('GitLab integration is disabled');
       }

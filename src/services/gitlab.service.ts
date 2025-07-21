@@ -176,7 +176,7 @@ export class GitLabService {
     return await this.makeRequest(url);
   }
 
-  private async fetchCommits(startDate: Date, endDate: Date): Promise<GitLabCommit[]> {
+  public async fetchCommits(startDate: Date, endDate: Date): Promise<GitLabCommit[]> {
     const commits: GitLabCommit[] = [];
     const projects = await this.getProjects();
 
@@ -209,7 +209,7 @@ export class GitLabService {
     return results.flat();
   }
 
-  private async fetchMergeRequests(startDate: Date, endDate: Date): Promise<GitLabMergeRequest[]> {
+  public async fetchMergeRequests(startDate: Date, endDate: Date): Promise<GitLabMergeRequest[]> {
     const mergeRequests: GitLabMergeRequest[] = [];
     const projects = await this.getProjects();
 
@@ -243,7 +243,7 @@ export class GitLabService {
     return results.flat();
   }
 
-  private async fetchIssues(startDate: Date, endDate: Date): Promise<GitLabIssue[]> {
+  public async fetchIssues(startDate: Date, endDate: Date): Promise<GitLabIssue[]> {
     const issues: GitLabIssue[] = [];
     const projects = await this.getProjects();
 
@@ -277,7 +277,7 @@ export class GitLabService {
     return results.flat();
   }
 
-  private async fetchComments(startDate: Date, endDate: Date): Promise<GitLabComment[]> {
+  public async fetchComments(startDate: Date, endDate: Date): Promise<GitLabComment[]> {
     const comments: GitLabComment[] = [];
     const projects = await this.getProjects();
 
@@ -289,12 +289,19 @@ export class GitLabService {
         projectLimit(async () => {
           try {
             // Fetch comments on merge requests
-            const mrComments = await this.fetchMergeRequestComments(project, startDate, endDate);
+            if (this.configService.get<boolean>('GITLAB_FETCH_MR_NOTES') !== false) {
+              const mrComments = await this.fetchMergeRequestComments(project, startDate, endDate);
+              comments.push(...mrComments);
+            } else {
+              this.logger.debug(`Skipping fetch of merge request comments for project ${project.name} as GITLAB_FETCH_MR_NOTES is false.`);
+            }
             // Fetch comments on issues
             const issueComments = await this.fetchIssueComments(project, startDate, endDate);
+            comments.push(...issueComments);
             // Fetch comments on commits
             const commitComments = await this.fetchCommitComments(project, startDate, endDate);
-            return [...mrComments, ...issueComments, ...commitComments];
+            comments.push(...commitComments);
+            return comments;
           } catch (error) {
             this.logger.warn(`Failed to fetch comments for project ${project.name}:`, error);
             return [];
@@ -476,7 +483,7 @@ export class GitLabService {
     }
   }
 
-  private createCommitActivity(commit: GitLabCommit): ActivityData {
+  public createCommitActivity(commit: GitLabCommit): ActivityData {
     return {
       id: `gitlab-commit-${commit.id}`,
       type: 'gitlab',
@@ -495,7 +502,7 @@ export class GitLabService {
     };
   }
 
-  private createMergeRequestActivity(mr: GitLabMergeRequest): ActivityData {
+  public createMergeRequestActivity(mr: GitLabMergeRequest): ActivityData {
     const action = mr.state === 'merged' ? 'merged' : mr.state === 'closed' ? 'closed' : 'created';
 
     return {
@@ -521,7 +528,7 @@ export class GitLabService {
     };
   }
 
-  private createIssueActivity(issue: GitLabIssue): ActivityData {
+  public createIssueActivity(issue: GitLabIssue): ActivityData {
     const action = issue.state === 'closed' ? 'closed' : 'created';
 
     return {
@@ -546,7 +553,7 @@ export class GitLabService {
     };
   }
 
-  private createCommentActivity(comment: GitLabComment): ActivityData {
+  public createCommentActivity(comment: GitLabComment): ActivityData {
     const noteableType = comment.noteable_type.toLowerCase();
 
     return {

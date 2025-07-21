@@ -4,6 +4,18 @@ export interface ApiConfig {
     baseUrl: string;
     accessToken: string;
     projectIds?: string[];
+    /**
+     * If false, disables fetching commits from GitLab (default: true)
+     */
+    fetchCommits?: boolean;
+    /**
+     * If false, disables fetching comments from GitLab (default: true)
+     */
+    fetchComments?: boolean;
+    /**
+     * If false, disables fetching merge request notes from GitLab (default: true)
+     */
+    fetchMrNotes?: boolean;
   };
   slack: {
     enabled: boolean;
@@ -36,6 +48,9 @@ export const getApiConfig = (): ApiConfig => {
       baseUrl: process.env.GITLAB_BASE_URL || 'https://gitlab.com',
       accessToken: process.env.GITLAB_ACCESS_TOKEN || '',
       projectIds: process.env.GITLAB_PROJECT_IDS?.split(',') || [],
+      fetchCommits: process.env.GITLAB_FETCH_COMMITS !== 'false',
+      fetchComments: process.env.GITLAB_FETCH_COMMENTS !== 'false',
+      fetchMrNotes: process.env.GITLAB_FETCH_MR_NOTES !== 'false',
     },
     slack: {
       enabled: process.env.SLACK_ENABLED !== 'false',
@@ -60,4 +75,4 @@ export const getApiConfig = (): ApiConfig => {
       issueTypes: process.env.JIRA_ISSUE_TYPES?.split(',') || [],
     },
   };
-}; 
+};

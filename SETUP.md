@@ -23,6 +23,10 @@ The application supports multiple environment files with the following precedenc
    GITLAB_PROJECT_IDS=123,456,789
    # Optional: Control how many GitLab projects are fetched in parallel (default: 5)
    GITLAB_PROJECT_CONCURRENCY=5
+   # Optional: Control whether to fetch commits, comments, or merge request notes (all default to true)
+   GITLAB_FETCH_COMMITS=true
+   GITLAB_FETCH_COMMENTS=true
+   GITLAB_FETCH_MR_NOTES=true
 
    # Slack API Configuration
    SLACK_ENABLED=true
@@ -151,7 +155,7 @@ This ensures your secrets stay local while allowing for flexible configuration m
 - Supports both GitLab.com and self-hosted GitLab instances
 - **Privacy**: Only your own commits, merge requests, issues, and comments will be included in the summary
 
-**Performance**: GitLab project data is fetched in parallel with a concurrency limit (default: 5). This means that data for multiple projects is retrieved at the same time, making summary generation much faster for users with many projects. The concurrency limit can be set via the `GITLAB_PROJECT_CONCURRENCY` environment variable or adjusted in the code if you need to tune for your environment or API rate limits.
+**Performance**: GitLab project data is fetched in parallel with a concurrency limit (default: 5). You can also control whether to fetch commits, comments, or merge request notes using the `GITLAB_FETCH_COMMITS`, `GITLAB_FETCH_COMMENTS`, and `GITLAB_FETCH_MR_NOTES` environment variables. This allows you to tune performance and API usage for your needs. The concurrency limit can be set via the `GITLAB_PROJECT_CONCURRENCY` environment variable (see above) or adjusted in the code if you need to tune for your environment or API rate limits.
 
 ### Slack API
 1. Go to https://api.slack.com/apps
