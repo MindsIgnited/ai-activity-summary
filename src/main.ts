@@ -11,19 +11,25 @@ function calculateDates(period: string): { startDate: Date; endDate: Date } {
   today.setHours(0, 0, 0, 0);
 
   switch (period.toLowerCase()) {
-    case 'today':
-      return { startDate: today, endDate: today };
-
-    case 'week':
+    case 'today': {
+      const end = new Date(today);
+      end.setHours(23, 59, 59, 999);
+      return { startDate: today, endDate: end };
+    }
+    case 'week': {
       const weekAgo = new Date(today);
       weekAgo.setDate(today.getDate() - 7);
-      return { startDate: weekAgo, endDate: today };
-
-    case 'month':
+      const end = new Date(today);
+      end.setHours(23, 59, 59, 999);
+      return { startDate: weekAgo, endDate: end };
+    }
+    case 'month': {
       const monthAgo = new Date(today);
       monthAgo.setDate(today.getDate() - 30);
-      return { startDate: monthAgo, endDate: today };
-
+      const end = new Date(today);
+      end.setHours(23, 59, 59, 999);
+      return { startDate: monthAgo, endDate: end };
+    }
     default:
       throw new Error(`Invalid period: ${period}. Use 'today', 'week', or 'month'`);
   }
@@ -269,6 +275,7 @@ async function handleActivitySummary(args: string[], appService: AppService) {
 
     startDate = new Date(args[startDateIndex + 1]);
     endDate = new Date(args[endDateIndex + 1]);
+    endDate.setHours(23, 59, 59, 999);
 
     if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
       throw new Error('Invalid date format. Use YYYY-MM-DD');

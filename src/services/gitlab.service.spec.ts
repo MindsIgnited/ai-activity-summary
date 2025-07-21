@@ -107,39 +107,42 @@ describe('GitLabService', () => {
       },
     ];
 
-    // Mock fetch to return different responses for different endpoints
-    global.fetch = jest.fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve(mockUser),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve(mockProjects),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve(mockCommits),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve([]),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve([]),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve([]),
-      });
+    // Mock the getCurrentUser method
+    jest.spyOn(service, 'getCurrentUser').mockResolvedValue(mockUser);
+
+    // Mock the fetchCommitsByDateRange method to return filtered data
+    const mockActivityData = [
+      {
+        id: 'gitlab-commit-abc123',
+        type: 'gitlab' as const,
+        timestamp: new Date('2024-01-01T10:00:00Z'),
+        title: 'Commit: Test commit',
+        description: 'Test commit message',
+        author: 'Test User',
+        url: 'https://gitlab.com/test/project/-/commit/abc123',
+        metadata: {
+          action: 'commit',
+          shortId: 'abc123',
+          projectId: 1,
+          projectName: 'Test Project',
+          authorEmail: 'test@example.com',
+        },
+      },
+    ];
+
+    jest.spyOn(service, 'fetchCommitsByDateRange').mockResolvedValue(
+      new Map([['2024-01-01', mockActivityData]])
+    );
+    jest.spyOn(service, 'fetchMergeRequestsByDateRange').mockResolvedValue(new Map());
+    jest.spyOn(service, 'fetchIssuesByDateRange').mockResolvedValue(new Map());
+    jest.spyOn(service, 'fetchComments').mockResolvedValue([]);
 
     const result = await service.fetchActivities(new Date('2024-01-01'));
 
     // Should only include activities from the authenticated user
     expect(result).toHaveLength(1);
     expect(result[0].author).toBe('Test User');
-    expect(result[0].metadata.action).toBe('commit');
+    expect(result[0].metadata?.action).toBe('commit');
   });
 
   it('should handle API errors gracefully', async () => {

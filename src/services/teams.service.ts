@@ -70,6 +70,12 @@ interface TeamsTeam {
   description?: string;
 }
 
+function setEndOfDay(date: Date): Date {
+  const d = new Date(date);
+  d.setHours(23, 59, 59, 999);
+  return d;
+}
+
 @Injectable()
 export class TeamsService {
   private readonly logger = new Logger(TeamsService.name);

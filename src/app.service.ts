@@ -66,11 +66,19 @@ export class AppService {
     let gitlabIssuesByDate: Map<string, ActivityData[]> = new Map();
     if (this.apiConfig.gitlab.enabled) {
       this.logger.debug('Pre-fetching all GitLab top-level activities for the date range');
-      [gitlabCommitsByDate, gitlabMRsByDate, gitlabIssuesByDate] = await Promise.all([
-        this.apiConfig.gitlab.fetchCommits !== false ? this.gitlabService.fetchCommitsByDateRange(startDate, endDate) : Promise.resolve(new Map()),
-        this.gitlabService.fetchMergeRequestsByDateRange(startDate, endDate),
-        this.apiConfig.gitlab.fetchIssues !== false ? this.gitlabService.fetchIssuesByDateRange(startDate, endDate) : Promise.resolve(new Map()),
-      ]);
+      try {
+        [gitlabCommitsByDate, gitlabMRsByDate, gitlabIssuesByDate] = await Promise.all([
+          this.apiConfig.gitlab.fetchCommits !== false ? this.gitlabService.fetchCommitsByDateRange(startDate, endDate) : Promise.resolve(new Map()),
+          this.gitlabService.fetchMergeRequestsByDateRange(startDate, endDate),
+          this.apiConfig.gitlab.fetchIssues !== false ? this.gitlabService.fetchIssuesByDateRange(startDate, endDate) : Promise.resolve(new Map()),
+        ]);
+      } catch (error) {
+        this.logger.error('Error pre-fetching GitLab activities:', error);
+        // Continue with empty maps if GitLab fails
+        gitlabCommitsByDate = new Map();
+        gitlabMRsByDate = new Map();
+        gitlabIssuesByDate = new Map();
+      }
     }
 
     const summaries: DailySummary[] = [];
@@ -121,14 +129,16 @@ export class AppService {
           gitlabActivities.push(...gitlabIssuesByDate.get(dateStr)!);
         }
         // Only fetch nested data for the day if enabled
-        if (this.apiConfig.gitlab.fetchNested !== false && this.apiConfig.gitlab.fetchComments !== false) {
+        if (this.apiConfig.gitlab.fetchNotes !== false && this.apiConfig.gitlab.fetchNested !== false && this.apiConfig.gitlab.fetchComments !== false) {
           this.logger.debug('Fetching GitLab comments for the day');
           const gitlabComments = await this.gitlabService.fetchComments(currentDate, currentDate);
           gitlabActivities.push(...gitlabComments.map(comment => this.gitlabService.createCommentActivity(comment)));
+        } else if (this.apiConfig.gitlab.fetchNotes === false) {
+          this.logger.debug('Skipping all GitLab note/comment fetching due to GITLAB_FETCH_NOTES=false');
         } else if (this.apiConfig.gitlab.fetchNested === false) {
-          this.logger.debug('Skipping all nested GitLab fetching (comments, notes, etc) due to config');
+          this.logger.debug('Skipping all nested GitLab fetching (comments, notes, etc) due to GITLAB_FETCH_NESTED=false');
         } else {
-          this.logger.debug('Skipping GitLab comments due to config');
+          this.logger.debug('Skipping GitLab comments due to GITLAB_FETCH_COMMENTS=false');
         }
         activities.push(...gitlabActivities);
         this.logger.log(`Found ${gitlabActivities.length} GitLab activities for ${dateStr}`);

@@ -28,6 +28,8 @@ The application supports multiple environment files with the following precedenc
    GITLAB_FETCH_COMMENTS=true
    GITLAB_FETCH_ISSUES=true
    GITLAB_FETCH_MR_NOTES=true
+   # Optional: If false, disables all note/comment fetching from GitLab (blanket flag that overrides all comment/note fetching)
+   GITLAB_FETCH_NOTES=true
    # Optional: If false, disables all nested fetching (comments, notes, etc) from GitLab (overrides other nested fetch flags)
    GITLAB_FETCH_NESTED=true
 
@@ -158,7 +160,16 @@ This ensures your secrets stay local while allowing for flexible configuration m
 - Supports both GitLab.com and self-hosted GitLab instances
 - **Privacy**: Only your own commits, merge requests, issues, and comments will be included in the summary
 
-**Performance**: GitLab project data is fetched in parallel with a concurrency limit (default: 5). You can also control whether to fetch commits, comments, issues, or merge request notes using the `GITLAB_FETCH_COMMITS`, `GITLAB_FETCH_COMMENTS`, `GITLAB_FETCH_ISSUES`, and `GITLAB_FETCH_MR_NOTES` environment variables. Setting `GITLAB_FETCH_NESTED=false` disables all nested fetching (comments, notes, etc) regardless of the other flags. This allows you to tune performance and API usage for your needs. The concurrency limit can be set via the `GITLAB_PROJECT_CONCURRENCY` environment variable (see above) or adjusted in the code if you need to tune for your environment or API rate limits.
+**Performance**: GitLab project data is fetched in parallel with a concurrency limit (default: 5). You can control what data is fetched using several environment variables:
+
+- `GITLAB_FETCH_COMMITS` - Control commit fetching (default: true)
+- `GITLAB_FETCH_COMMENTS` - Control comment fetching (default: true)
+- `GITLAB_FETCH_ISSUES` - Control issue fetching (default: true)
+- `GITLAB_FETCH_MR_NOTES` - Control merge request note fetching (default: true)
+- `GITLAB_FETCH_NOTES` - **Blanket flag**: If false, disables ALL note/comment fetching (overrides other comment/note flags)
+- `GITLAB_FETCH_NESTED` - If false, disables all nested fetching (comments, notes, etc) regardless of other flags
+
+The `GITLAB_FETCH_NOTES` flag provides a simple way to disable all comment/note fetching at once, which is useful for performance tuning or when you only want top-level activities (commits, merge requests, issues). The concurrency limit can be set via the `GITLAB_PROJECT_CONCURRENCY` environment variable or adjusted in the code if you need to tune for your environment or API rate limits.
 
 ### Slack API
 1. Go to https://api.slack.com/apps

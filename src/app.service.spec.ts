@@ -28,25 +28,44 @@ describe('AppService', () => {
     fetchActivities: jest.fn(),
   };
 
+  function setEndOfDay(date: Date): Date {
+    const d = new Date(date);
+    d.setHours(23, 59, 59, 999);
+    return d;
+  }
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AppService,
         {
           provide: JiraService,
-          useValue: mockJiraService,
+          useValue: {
+            fetchActivities: jest.fn(),
+          },
         },
         {
           provide: TeamsService,
-          useValue: mockTeamsService,
+          useValue: {
+            fetchActivities: jest.fn(),
+          },
         },
         {
           provide: GitLabService,
-          useValue: mockGitlabService,
+          useValue: {
+            fetchActivities: jest.fn(),
+            fetchCommitsByDateRange: jest.fn(),
+            fetchMergeRequestsByDateRange: jest.fn(),
+            fetchIssuesByDateRange: jest.fn(),
+            fetchComments: jest.fn(),
+            createCommentActivity: jest.fn(),
+          },
         },
         {
           provide: SlackService,
-          useValue: mockSlackService,
+          useValue: {
+            fetchActivities: jest.fn(),
+          },
         },
       ],
     }).compile();
@@ -69,7 +88,7 @@ describe('AppService', () => {
   describe('generateActivitySummary', () => {
     it('should generate summary for a single day', async () => {
       const startDate = new Date('2024-01-01');
-      const endDate = new Date('2024-01-01');
+      const endDate = setEndOfDay(new Date('2024-01-01'));
 
       const mockActivities = [
         {
@@ -81,7 +100,29 @@ describe('AppService', () => {
         },
       ];
 
-      gitlabService.fetchActivities.mockResolvedValue(mockActivities);
+      // Mock the new ByDateRange methods
+      gitlabService.fetchCommitsByDateRange.mockResolvedValue(new Map([['2024-01-01', mockActivities]]));
+      gitlabService.fetchMergeRequestsByDateRange.mockResolvedValue(new Map());
+      gitlabService.fetchIssuesByDateRange.mockResolvedValue(new Map());
+      gitlabService.fetchComments.mockResolvedValue([]);
+      gitlabService.createCommentActivity.mockImplementation((comment) => ({
+        id: `gitlab-comment-${comment.id}`,
+        type: 'gitlab' as const,
+        timestamp: new Date(comment.created_at),
+        title: `Comment: ${comment.body.substring(0, 50)}`,
+        description: comment.body,
+        author: comment.author.name,
+        url: comment.web_url || '#',
+        metadata: {
+          action: 'comment',
+          noteableType: comment.noteable_type,
+          noteableId: comment.noteable_id,
+          projectId: comment.project_id,
+          projectName: comment.project_name,
+          authorEmail: comment.author.email,
+        },
+      }));
+
       slackService.fetchActivities.mockResolvedValue([]);
       teamsService.fetchActivities.mockResolvedValue([]);
       jiraService.fetchActivities.mockResolvedValue([]);
@@ -97,9 +138,31 @@ describe('AppService', () => {
 
     it('should generate summary for multiple days', async () => {
       const startDate = new Date('2024-01-01');
-      const endDate = new Date('2024-01-03');
+      const endDate = setEndOfDay(new Date('2024-01-03'));
 
-      gitlabService.fetchActivities.mockResolvedValue([]);
+      // Mock the new ByDateRange methods
+      gitlabService.fetchCommitsByDateRange.mockResolvedValue(new Map());
+      gitlabService.fetchMergeRequestsByDateRange.mockResolvedValue(new Map());
+      gitlabService.fetchIssuesByDateRange.mockResolvedValue(new Map());
+      gitlabService.fetchComments.mockResolvedValue([]);
+      gitlabService.createCommentActivity.mockImplementation((comment) => ({
+        id: `gitlab-comment-${comment.id}`,
+        type: 'gitlab' as const,
+        timestamp: new Date(comment.created_at),
+        title: `Comment: ${comment.body.substring(0, 50)}`,
+        description: comment.body,
+        author: comment.author.name,
+        url: comment.web_url || '#',
+        metadata: {
+          action: 'comment',
+          noteableType: comment.noteable_type,
+          noteableId: comment.noteable_id,
+          projectId: comment.project_id,
+          projectName: comment.project_name,
+          authorEmail: comment.author.email,
+        },
+      }));
+
       slackService.fetchActivities.mockResolvedValue([]);
       teamsService.fetchActivities.mockResolvedValue([]);
       jiraService.fetchActivities.mockResolvedValue([]);
@@ -114,9 +177,33 @@ describe('AppService', () => {
 
     it('should handle errors gracefully', async () => {
       const startDate = new Date('2024-01-01');
-      const endDate = new Date('2024-01-01');
+      const endDate = setEndOfDay(new Date('2024-01-01'));
 
-      gitlabService.fetchActivities.mockRejectedValue(new Error('API Error'));
+      // Mock the new ByDateRange methods with error
+      gitlabService.fetchCommitsByDateRange.mockImplementation(() => {
+        throw new Error('API Error');
+      });
+      gitlabService.fetchMergeRequestsByDateRange.mockResolvedValue(new Map());
+      gitlabService.fetchIssuesByDateRange.mockResolvedValue(new Map());
+      gitlabService.fetchComments.mockResolvedValue([]);
+      gitlabService.createCommentActivity.mockImplementation((comment) => ({
+        id: `gitlab-comment-${comment.id}`,
+        type: 'gitlab' as const,
+        timestamp: new Date(comment.created_at),
+        title: `Comment: ${comment.body.substring(0, 50)}`,
+        description: comment.body,
+        author: comment.author.name,
+        url: comment.web_url || '#',
+        metadata: {
+          action: 'comment',
+          noteableType: comment.noteable_type,
+          noteableId: comment.noteable_id,
+          projectId: comment.project_id,
+          projectName: comment.project_name,
+          authorEmail: comment.author.email,
+        },
+      }));
+
       slackService.fetchActivities.mockResolvedValue([]);
       teamsService.fetchActivities.mockResolvedValue([]);
       jiraService.fetchActivities.mockResolvedValue([]);
@@ -168,4 +255,4 @@ describe('AppService', () => {
       expect(stats.mostActiveAuthor).toBe('');
     });
   });
-}); 
+});

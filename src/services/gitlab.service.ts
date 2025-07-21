@@ -111,6 +111,12 @@ interface GitLabUser {
   email: string;
 }
 
+function setEndOfDay(date: Date): Date {
+  const d = new Date(date);
+  d.setHours(23, 59, 59, 999);
+  return d;
+}
+
 @Injectable()
 export class GitLabService {
   private readonly logger = new Logger(GitLabService.name);
@@ -249,6 +255,7 @@ export class GitLabService {
    * Fetch all commits for the date range and group by date (YYYY-MM-DD)
    */
   public async fetchCommitsByDateRange(startDate: Date, endDate: Date): Promise<Map<string, ActivityData[]>> {
+    endDate = setEndOfDay(endDate);
     const projects = await this.getProjects();
     const projectLimit = pLimit(this.getProjectConcurrency());
     const allCommits: ActivityData[] = [];
@@ -286,6 +293,7 @@ export class GitLabService {
    * Only fetch MRs authored by the current user using author_id or author_username.
    */
   public async fetchMergeRequestsByDateRange(startDate: Date, endDate: Date): Promise<Map<string, ActivityData[]>> {
+    endDate = setEndOfDay(endDate);
     const projects = await this.getProjects();
     const projectLimit = pLimit(this.getProjectConcurrency());
     const allMRs: ActivityData[] = [];
@@ -324,6 +332,7 @@ export class GitLabService {
    * Only fetch issues authored by the current user using author_id or author_username.
    */
   public async fetchIssuesByDateRange(startDate: Date, endDate: Date): Promise<Map<string, ActivityData[]>> {
+    endDate = setEndOfDay(endDate);
     const projects = await this.getProjects();
     const projectLimit = pLimit(this.getProjectConcurrency());
     const allIssues: ActivityData[] = [];
@@ -358,6 +367,13 @@ export class GitLabService {
   }
 
   public async fetchComments(startDate: Date, endDate: Date): Promise<GitLabComment[]> {
+    // Check if notes fetching is disabled
+    if (this.configService.get<boolean>('GITLAB_FETCH_NOTES') === false) {
+      this.logger.debug('Skipping all GitLab note/comment fetching as GITLAB_FETCH_NOTES is false.');
+      return [];
+    }
+
+    endDate = setEndOfDay(endDate);
     const comments: GitLabComment[] = [];
     const projects = await this.getProjects();
 
@@ -393,6 +409,12 @@ export class GitLabService {
   }
 
   private async fetchMergeRequestComments(project: GitLabProject, startDate: Date, endDate: Date): Promise<GitLabComment[]> {
+    // Check if notes fetching is disabled
+    if (this.configService.get<boolean>('GITLAB_FETCH_NOTES') === false) {
+      return [];
+    }
+
+    endDate = setEndOfDay(endDate);
     const comments: GitLabComment[] = [];
 
     try {
@@ -429,6 +451,12 @@ export class GitLabService {
   }
 
   private async fetchIssueComments(project: GitLabProject, startDate: Date, endDate: Date): Promise<GitLabComment[]> {
+    // Check if notes fetching is disabled
+    if (this.configService.get<boolean>('GITLAB_FETCH_NOTES') === false) {
+      return [];
+    }
+
+    endDate = setEndOfDay(endDate);
     const comments: GitLabComment[] = [];
 
     try {
@@ -465,6 +493,12 @@ export class GitLabService {
   }
 
   private async fetchCommitComments(project: GitLabProject, startDate: Date, endDate: Date): Promise<GitLabComment[]> {
+    // Check if notes fetching is disabled
+    if (this.configService.get<boolean>('GITLAB_FETCH_NOTES') === false) {
+      return [];
+    }
+
+    endDate = setEndOfDay(endDate);
     const comments: GitLabComment[] = [];
 
     try {

@@ -77,6 +77,12 @@ interface JiraChangelog {
   }[];
 }
 
+function setEndOfDay(date: Date): Date {
+  const d = new Date(date);
+  d.setHours(23, 59, 59, 999);
+  return d;
+}
+
 @Injectable()
 export class JiraService {
   private readonly logger = new Logger(JiraService.name);
@@ -134,6 +140,7 @@ export class JiraService {
   }
 
   private async fetchUpdatedIssues(startDate: Date, endDate: Date): Promise<JiraIssue[]> {
+    endDate = setEndOfDay(endDate);
     const jql = this.buildJQL(startDate, endDate);
     const baseUrl = this.configService.get<string>('JIRA_BASE_URL');
     const url = `${baseUrl}/rest/api/3/search`;
@@ -149,6 +156,7 @@ export class JiraService {
   }
 
   private async fetchIssueComments(issueKey: string, startDate: Date, endDate: Date): Promise<JiraComment[]> {
+    endDate = setEndOfDay(endDate);
     const baseUrl = this.configService.get<string>('JIRA_BASE_URL');
     const url = `${baseUrl}/rest/api/3/issue/${issueKey}/comment`;
 
@@ -167,6 +175,7 @@ export class JiraService {
   }
 
   private async fetchIssueWorklogs(issueKey: string, startDate: Date, endDate: Date): Promise<JiraWorklog[]> {
+    endDate = setEndOfDay(endDate);
     const baseUrl = this.configService.get<string>('JIRA_BASE_URL');
     const url = `${baseUrl}/rest/api/3/issue/${issueKey}/worklog`;
 
@@ -185,6 +194,7 @@ export class JiraService {
   }
 
   private async fetchIssueChangelog(issueKey: string, startDate: Date, endDate: Date): Promise<JiraChangelog[]> {
+    endDate = setEndOfDay(endDate);
     const baseUrl = this.configService.get<string>('JIRA_BASE_URL');
     const url = `${baseUrl}/rest/api/3/issue/${issueKey}?expand=changelog`;
 
@@ -203,6 +213,7 @@ export class JiraService {
   }
 
   private buildJQL(startDate: Date, endDate: Date): string {
+    endDate = setEndOfDay(endDate);
     const startDateStr = startDate.toISOString().split('T')[0];
     const endDateStr = endDate.toISOString().split('T')[0];
     const userEmail = this.configService.get<string>('JIRA_EMAIL');

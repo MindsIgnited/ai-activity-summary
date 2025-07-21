@@ -31,6 +31,12 @@ interface SlackUser {
   };
 }
 
+function setEndOfDay(date: Date): Date {
+  const d = new Date(date);
+  d.setHours(23, 59, 59, 999);
+  return d;
+}
+
 @Injectable()
 export class SlackService {
   private readonly logger = new Logger(SlackService.name);
@@ -47,8 +53,7 @@ export class SlackService {
     const activities: ActivityData[] = [];
     const startOfDay = new Date(date);
     startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(date);
-    endOfDay.setHours(23, 59, 59, 999);
+    const endOfDay = setEndOfDay(date);
     const oldest = (startOfDay.getTime() / 1000).toString();
     const latest = (endOfDay.getTime() / 1000).toString();
 
