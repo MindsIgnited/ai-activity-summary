@@ -118,7 +118,88 @@ export class GitLabService {
 
   constructor(private readonly configService: ConfigService) { }
 
-  async fetchActivities(date: Date): Promise<ActivityData[]> {
+  public isConfigured(): boolean {
+    const baseUrl = this.configService.get<string>('GITLAB_BASE_URL');
+    const accessToken = this.configService.get<string>('GITLAB_ACCESS_TOKEN');
+    return !!(baseUrl && accessToken);
+  }
+
+  public async getCurrentUser(): Promise<GitLabUser> {
+    const url = `${this.getBaseUrl()}/api/v4/user`;
+    return await this.makeRequest(url);
+  }
+
+  // For compatibility, add wrappers for fetchCommits, fetchMergeRequests, fetchIssues if needed
+  public async fetchCommits(startDate: Date, endDate: Date): Promise<GitLabCommit[]> {
+    // Use the new by-date-range method and flatten results
+    const map = await this.fetchCommitsByDateRange(startDate, endDate);
+    return Array.from(map.values()).flat().map(a => ({
+      id: a.metadata?.shortId || '',
+      short_id: a.metadata?.shortId || '',
+      title: a.title,
+      message: a.description || '',
+      author_name: a.author || '',
+      author_email: a.metadata?.authorEmail || '',
+      created_at: a.timestamp.toISOString(),
+      web_url: a.url || '',
+      project_id: a.metadata?.projectId || 0,
+      project_name: a.metadata?.projectName,
+    }));
+  }
+  public async fetchMergeRequests(startDate: Date, endDate: Date): Promise<GitLabMergeRequest[]> {
+    const map = await this.fetchMergeRequestsByDateRange(startDate, endDate);
+    return Array.from(map.values()).flat().map(a => ({
+      id: a.metadata?.iid || 0,
+      iid: a.metadata?.iid || 0,
+      title: a.title,
+      description: a.description || '',
+      state: a.metadata?.state || '',
+      created_at: a.timestamp.toISOString(),
+      updated_at: a.timestamp.toISOString(),
+      closed_at: undefined,
+      merged_at: undefined,
+      author: {
+        id: 0,
+        name: a.author || '',
+        username: '',
+        email: a.metadata?.authorEmail || '',
+      },
+      assignee: undefined,
+      web_url: a.url || '',
+      project_id: a.metadata?.projectId || 0,
+      project_name: a.metadata?.projectName,
+      source_branch: a.metadata?.sourceBranch || '',
+      target_branch: a.metadata?.targetBranch || '',
+      merge_status: a.metadata?.mergeStatus || '',
+    }));
+  }
+  public async fetchIssues(startDate: Date, endDate: Date): Promise<GitLabIssue[]> {
+    const map = await this.fetchIssuesByDateRange(startDate, endDate);
+    return Array.from(map.values()).flat().map(a => ({
+      id: a.metadata?.iid || 0,
+      iid: a.metadata?.iid || 0,
+      title: a.title,
+      description: a.description || '',
+      state: a.metadata?.state || '',
+      created_at: a.timestamp.toISOString(),
+      updated_at: a.timestamp.toISOString(),
+      closed_at: undefined,
+      author: {
+        id: 0,
+        name: a.author || '',
+        username: '',
+        email: a.metadata?.authorEmail || '',
+      },
+      assignee: undefined,
+      web_url: a.url || '',
+      project_id: a.metadata?.projectId || 0,
+      project_name: a.metadata?.projectName,
+      labels: a.metadata?.labels || [],
+      milestone: undefined,
+    }));
+  }
+
+  public async fetchActivities(date: Date): Promise<ActivityData[]> {
     if (!this.isConfigured()) {
       this.logger.warn('GitLab configuration incomplete, skipping GitLab activities');
       return [];
