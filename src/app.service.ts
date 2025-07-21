@@ -60,12 +60,83 @@ export class AppService {
   ): Promise<DailySummary[]> {
     this.logger.log(`Generating activity summary from ${startDate.toISOString()} to ${endDate.toISOString()}`);
 
+    // Pre-fetch all GitLab top-level data for the range
+    let gitlabCommitsByDate: Map<string, ActivityData[]> = new Map();
+    let gitlabMRsByDate: Map<string, ActivityData[]> = new Map();
+    let gitlabIssuesByDate: Map<string, ActivityData[]> = new Map();
+    if (this.apiConfig.gitlab.enabled) {
+      this.logger.debug('Pre-fetching all GitLab top-level activities for the date range');
+      [gitlabCommitsByDate, gitlabMRsByDate, gitlabIssuesByDate] = await Promise.all([
+        this.apiConfig.gitlab.fetchCommits !== false ? this.gitlabService.fetchCommitsByDateRange(startDate, endDate) : Promise.resolve(new Map()),
+        this.gitlabService.fetchMergeRequestsByDateRange(startDate, endDate),
+        this.apiConfig.gitlab.fetchIssues !== false ? this.gitlabService.fetchIssuesByDateRange(startDate, endDate) : Promise.resolve(new Map()),
+      ]);
+    }
+
     const summaries: DailySummary[] = [];
     const currentDate = new Date(startDate);
 
     while (currentDate <= endDate) {
-      const dailyActivities = await this.fetchDailyActivities(currentDate);
-      const summary = this.createDailySummary(currentDate, dailyActivities);
+      const dateStr = currentDate.toISOString().split('T')[0];
+      const activities: ActivityData[] = [];
+
+      // Slack
+      if (this.apiConfig.slack.enabled) {
+        this.logger.debug('Fetching Slack activities');
+        const slackActivities = await this.slackService.fetchActivities(currentDate);
+        activities.push(...slackActivities);
+      } else {
+        this.logger.debug('Slack integration is disabled');
+      }
+
+      // Teams
+      if (this.apiConfig.teams.enabled) {
+        this.logger.debug('Fetching Teams activities');
+        const teamsActivities = await this.teamsService.fetchActivities(currentDate);
+        activities.push(...teamsActivities);
+      } else {
+        this.logger.debug('Teams integration is disabled');
+      }
+
+      // Jira
+      if (this.apiConfig.jira.enabled) {
+        this.logger.debug('Fetching Jira activities');
+        const jiraActivities = await this.jiraService.fetchActivities(currentDate);
+        activities.push(...jiraActivities);
+      } else {
+        this.logger.debug('Jira integration is disabled');
+      }
+
+      // GitLab (use pre-fetched maps)
+      if (this.apiConfig.gitlab.enabled) {
+        this.logger.debug('Aggregating GitLab activities for the day');
+        const gitlabActivities: ActivityData[] = [];
+        if (this.apiConfig.gitlab.fetchCommits !== false && gitlabCommitsByDate.has(dateStr)) {
+          gitlabActivities.push(...gitlabCommitsByDate.get(dateStr)!);
+        }
+        if (gitlabMRsByDate.has(dateStr)) {
+          gitlabActivities.push(...gitlabMRsByDate.get(dateStr)!);
+        }
+        if (this.apiConfig.gitlab.fetchIssues !== false && gitlabIssuesByDate.has(dateStr)) {
+          gitlabActivities.push(...gitlabIssuesByDate.get(dateStr)!);
+        }
+        // Only fetch nested data for the day if enabled
+        if (this.apiConfig.gitlab.fetchNested !== false && this.apiConfig.gitlab.fetchComments !== false) {
+          this.logger.debug('Fetching GitLab comments for the day');
+          const gitlabComments = await this.gitlabService.fetchComments(currentDate, currentDate);
+          gitlabActivities.push(...gitlabComments.map(comment => this.gitlabService.createCommentActivity(comment)));
+        } else if (this.apiConfig.gitlab.fetchNested === false) {
+          this.logger.debug('Skipping all nested GitLab fetching (comments, notes, etc) due to config');
+        } else {
+          this.logger.debug('Skipping GitLab comments due to config');
+        }
+        activities.push(...gitlabActivities);
+        this.logger.log(`Found ${gitlabActivities.length} GitLab activities for ${dateStr}`);
+      } else {
+        this.logger.debug('GitLab integration is disabled');
+      }
+
+      const summary = this.createDailySummary(currentDate, activities);
       summaries.push(summary);
 
       // Move to next day
@@ -80,10 +151,9 @@ export class AppService {
   }
 
   private async fetchDailyActivities(date: Date): Promise<ActivityData[]> {
+    // Only fetch Slack, Teams, Jira for the day
     const activities: ActivityData[] = [];
-
     try {
-      // Fetch from Slack API if enabled
       if (this.apiConfig.slack.enabled) {
         this.logger.debug('Fetching Slack activities');
         const slackActivities = await this.slackService.fetchActivities(date);
@@ -91,8 +161,6 @@ export class AppService {
       } else {
         this.logger.debug('Slack integration is disabled');
       }
-
-      // Fetch from Teams API if enabled
       if (this.apiConfig.teams.enabled) {
         this.logger.debug('Fetching Teams activities');
         const teamsActivities = await this.teamsService.fetchActivities(date);
@@ -100,8 +168,6 @@ export class AppService {
       } else {
         this.logger.debug('Teams integration is disabled');
       }
-
-      // Fetch from Jira API if enabled
       if (this.apiConfig.jira.enabled) {
         this.logger.debug('Fetching Jira activities');
         const jiraActivities = await this.jiraService.fetchActivities(date);
@@ -109,53 +175,9 @@ export class AppService {
       } else {
         this.logger.debug('Jira integration is disabled');
       }
-
-      // Fetch from GitLab API if enabled
-      if (this.apiConfig.gitlab.enabled) {
-        this.logger.debug('Fetching GitLab activities');
-        const gitlabActivities: ActivityData[] = [];
-        // Use the new top-level fetches for the full date range
-        const startDate = date;
-        const endDate = date;
-        const [
-          commitsByDate,
-          mrsByDate,
-          issuesByDate
-        ] = await Promise.all([
-          this.gitlabService.fetchCommitsByDateRange(startDate, endDate),
-          this.gitlabService.fetchMergeRequestsByDateRange(startDate, endDate),
-          this.gitlabService.fetchIssuesByDateRange(startDate, endDate),
-        ]);
-        const dateStr = date.toISOString().split('T')[0];
-        if (this.apiConfig.gitlab.fetchCommits !== false && commitsByDate.has(dateStr)) {
-          gitlabActivities.push(...commitsByDate.get(dateStr)!);
-        }
-        if (mrsByDate.has(dateStr)) {
-          gitlabActivities.push(...mrsByDate.get(dateStr)!);
-        }
-        if (this.apiConfig.gitlab.fetchIssues !== false && issuesByDate.has(dateStr)) {
-          gitlabActivities.push(...issuesByDate.get(dateStr)!);
-        }
-        // Only fetch comments if enabled and nested fetching is allowed
-        if (this.apiConfig.gitlab.fetchNested === false) {
-          this.logger.debug('Skipping all nested GitLab fetching (comments, notes, etc) due to config');
-        } else if (this.apiConfig.gitlab.fetchComments !== false) {
-          this.logger.debug('Fetching GitLab comments');
-          const gitlabComments = await this.gitlabService.fetchComments(date, date);
-          gitlabActivities.push(...gitlabComments.map(comment => this.gitlabService.createCommentActivity(comment)));
-        } else {
-          this.logger.debug('Skipping GitLab comments due to config');
-        }
-        activities.push(...gitlabActivities);
-        this.logger.log(`Found ${gitlabActivities.length} GitLab activities for ${dateStr}`);
-      } else {
-        this.logger.debug('GitLab integration is disabled');
-      }
-
     } catch (error) {
       this.logger.error(`Error fetching activities for ${date.toISOString()}:`, error);
     }
-
     return activities;
   }
 
