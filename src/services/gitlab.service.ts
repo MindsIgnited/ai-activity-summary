@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ActivityData } from '../app.service';
+import pLimit from 'p-limit';
 
 interface GitLabCommit {
   id: string;
@@ -179,114 +180,129 @@ export class GitLabService {
     const commits: GitLabCommit[] = [];
     const projects = await this.getProjects();
 
-    for (const project of projects) {
-      try {
-        const url = `${this.getBaseUrl()}/api/v4/projects/${project.id}/repository/commits?since=${startDate.toISOString()}&until=${endDate.toISOString()}&per_page=100`;
+    // Set concurrency limit for parallel project fetches
+    const projectLimit = pLimit(this.getProjectConcurrency());
 
-        const response = await this.makeRequest(url);
-        const projectCommits = response.map((commit: GitLabCommit) => ({
-          ...commit,
-          project_name: project.name,
-        }));
-
-        // Filter commits by current user
-        const userCommits = projectCommits.filter(commit =>
-          commit.author_email === this.currentUser?.email ||
-          commit.author_name === this.currentUser?.name
-        );
-
-        commits.push(...userCommits);
-      } catch (error) {
-        this.logger.warn(`Failed to fetch commits for project ${project.name}:`, error);
-      }
-    }
-
-    return commits;
+    const results = await Promise.all(
+      projects.map(project =>
+        projectLimit(async () => {
+          try {
+            const url = `${this.getBaseUrl()}/api/v4/projects/${project.id}/repository/commits?since=${startDate.toISOString()}&until=${endDate.toISOString()}&per_page=100`;
+            const response = await this.makeRequest(url);
+            const projectCommits = response.map((commit: GitLabCommit) => ({
+              ...commit,
+              project_name: project.name,
+            }));
+            // Filter commits by current user
+            const userCommits = projectCommits.filter(commit =>
+              commit.author_email === this.currentUser?.email ||
+              commit.author_name === this.currentUser?.name
+            );
+            return userCommits;
+          } catch (error) {
+            this.logger.warn(`Failed to fetch commits for project ${project.name}:`, error);
+            return [];
+          }
+        })
+      )
+    );
+    return results.flat();
   }
 
   private async fetchMergeRequests(startDate: Date, endDate: Date): Promise<GitLabMergeRequest[]> {
     const mergeRequests: GitLabMergeRequest[] = [];
     const projects = await this.getProjects();
 
-    for (const project of projects) {
-      try {
-        const url = `${this.getBaseUrl()}/api/v4/projects/${project.id}/merge_requests?created_after=${startDate.toISOString()}&created_before=${endDate.toISOString()}&per_page=100&state=all`;
+    // Set concurrency limit for parallel project fetches
+    const projectLimit = pLimit(this.getProjectConcurrency());
 
-        const response = await this.makeRequest(url);
-        const projectMRs = response.map((mr: GitLabMergeRequest) => ({
-          ...mr,
-          project_name: project.name,
-        }));
-
-        // Filter merge requests by current user
-        const userMRs = projectMRs.filter(mr =>
-          mr.author.id === this.currentUser?.id ||
-          mr.author.username === this.currentUser?.username ||
-          mr.author.email === this.currentUser?.email
-        );
-
-        mergeRequests.push(...userMRs);
-      } catch (error) {
-        this.logger.warn(`Failed to fetch merge requests for project ${project.name}:`, error);
-      }
-    }
-
-    return mergeRequests;
+    const results = await Promise.all(
+      projects.map(project =>
+        projectLimit(async () => {
+          try {
+            const url = `${this.getBaseUrl()}/api/v4/projects/${project.id}/merge_requests?created_after=${startDate.toISOString()}&created_before=${endDate.toISOString()}&per_page=100&state=all`;
+            const response = await this.makeRequest(url);
+            const projectMRs = response.map((mr: GitLabMergeRequest) => ({
+              ...mr,
+              project_name: project.name,
+            }));
+            // Filter merge requests by current user
+            const userMRs = projectMRs.filter(mr =>
+              mr.author.id === this.currentUser?.id ||
+              mr.author.username === this.currentUser?.username ||
+              mr.author.email === this.currentUser?.email
+            );
+            return userMRs;
+          } catch (error) {
+            this.logger.warn(`Failed to fetch merge requests for project ${project.name}:`, error);
+            return [];
+          }
+        })
+      )
+    );
+    return results.flat();
   }
 
   private async fetchIssues(startDate: Date, endDate: Date): Promise<GitLabIssue[]> {
     const issues: GitLabIssue[] = [];
     const projects = await this.getProjects();
 
-    for (const project of projects) {
-      try {
-        const url = `${this.getBaseUrl()}/api/v4/projects/${project.id}/issues?created_after=${startDate.toISOString()}&created_before=${endDate.toISOString()}&per_page=100&state=all`;
+    // Set concurrency limit for parallel project fetches
+    const projectLimit = pLimit(this.getProjectConcurrency());
 
-        const response = await this.makeRequest(url);
-        const projectIssues = response.map((issue: GitLabIssue) => ({
-          ...issue,
-          project_name: project.name,
-        }));
-
-        // Filter issues by current user
-        const userIssues = projectIssues.filter(issue =>
-          issue.author.id === this.currentUser?.id ||
-          issue.author.username === this.currentUser?.username ||
-          issue.author.email === this.currentUser?.email
-        );
-
-        issues.push(...userIssues);
-      } catch (error) {
-        this.logger.warn(`Failed to fetch issues for project ${project.name}:`, error);
-      }
-    }
-
-    return issues;
+    const results = await Promise.all(
+      projects.map(project =>
+        projectLimit(async () => {
+          try {
+            const url = `${this.getBaseUrl()}/api/v4/projects/${project.id}/issues?created_after=${startDate.toISOString()}&created_before=${endDate.toISOString()}&per_page=100&state=all`;
+            const response = await this.makeRequest(url);
+            const projectIssues = response.map((issue: GitLabIssue) => ({
+              ...issue,
+              project_name: project.name,
+            }));
+            // Filter issues by current user
+            const userIssues = projectIssues.filter(issue =>
+              issue.author.id === this.currentUser?.id ||
+              issue.author.username === this.currentUser?.username ||
+              issue.author.email === this.currentUser?.email
+            );
+            return userIssues;
+          } catch (error) {
+            this.logger.warn(`Failed to fetch issues for project ${project.name}:`, error);
+            return [];
+          }
+        })
+      )
+    );
+    return results.flat();
   }
 
   private async fetchComments(startDate: Date, endDate: Date): Promise<GitLabComment[]> {
     const comments: GitLabComment[] = [];
     const projects = await this.getProjects();
 
-    for (const project of projects) {
-      try {
-        // Fetch comments on merge requests
-        const mrComments = await this.fetchMergeRequestComments(project, startDate, endDate);
-        comments.push(...mrComments);
+    // Set concurrency limit for parallel project fetches
+    const projectLimit = pLimit(this.getProjectConcurrency());
 
-        // Fetch comments on issues
-        const issueComments = await this.fetchIssueComments(project, startDate, endDate);
-        comments.push(...issueComments);
-
-        // Fetch comments on commits
-        const commitComments = await this.fetchCommitComments(project, startDate, endDate);
-        comments.push(...commitComments);
-      } catch (error) {
-        this.logger.warn(`Failed to fetch comments for project ${project.name}:`, error);
-      }
-    }
-
-    return comments;
+    const results = await Promise.all(
+      projects.map(project =>
+        projectLimit(async () => {
+          try {
+            // Fetch comments on merge requests
+            const mrComments = await this.fetchMergeRequestComments(project, startDate, endDate);
+            // Fetch comments on issues
+            const issueComments = await this.fetchIssueComments(project, startDate, endDate);
+            // Fetch comments on commits
+            const commitComments = await this.fetchCommitComments(project, startDate, endDate);
+            return [...mrComments, ...issueComments, ...commitComments];
+          } catch (error) {
+            this.logger.warn(`Failed to fetch comments for project ${project.name}:`, error);
+            return [];
+          }
+        })
+      )
+    );
+    return results.flat();
   }
 
   private async fetchMergeRequestComments(project: GitLabProject, startDate: Date, endDate: Date): Promise<GitLabComment[]> {
@@ -424,6 +440,12 @@ export class GitLabService {
     }
 
     return projects;
+  }
+
+  private getProjectConcurrency(): number {
+    const envValue = this.configService.get<string>('GITLAB_PROJECT_CONCURRENCY');
+    const parsed = envValue ? parseInt(envValue, 10) : NaN;
+    return !isNaN(parsed) && parsed > 0 ? parsed : 5;
   }
 
   private getBaseUrl(): string {

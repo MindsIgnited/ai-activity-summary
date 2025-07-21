@@ -21,6 +21,8 @@ The application supports multiple environment files with the following precedenc
    GITLAB_BASE_URL=https://gitlab.com
    GITLAB_ACCESS_TOKEN=your_actual_gitlab_token
    GITLAB_PROJECT_IDS=123,456,789
+   # Optional: Control how many GitLab projects are fetched in parallel (default: 5)
+   GITLAB_PROJECT_CONCURRENCY=5
 
    # Slack API Configuration
    SLACK_ENABLED=true
@@ -148,6 +150,8 @@ This ensures your secrets stay local while allowing for flexible configuration m
 - If no projects are specified, the app will fetch from all accessible projects
 - Supports both GitLab.com and self-hosted GitLab instances
 - **Privacy**: Only your own commits, merge requests, issues, and comments will be included in the summary
+
+**Performance**: GitLab project data is fetched in parallel with a concurrency limit (default: 5). This means that data for multiple projects is retrieved at the same time, making summary generation much faster for users with many projects. The concurrency limit can be set via the `GITLAB_PROJECT_CONCURRENCY` environment variable or adjusted in the code if you need to tune for your environment or API rate limits.
 
 ### Slack API
 1. Go to https://api.slack.com/apps
@@ -303,6 +307,10 @@ node dist/main --period today --output ./summary.json
 # Run in development mode
 pnpm run generate:dev --start-date 2024-01-01 --end-date 2024-01-31
 ```
+
+### Performance
+
+GitLab project data is fetched in parallel with a concurrency limit (default: 5). This means that data for multiple projects is retrieved at the same time, making summary generation much faster for users with many projects. The concurrency limit can be set via the `GITLAB_PROJECT_CONCURRENCY` environment variable or adjusted in the code if you need to tune for your environment or API rate limits.
 
 ## Output Format
 
