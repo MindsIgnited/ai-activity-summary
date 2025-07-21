@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { AppService } from './app.service';
 import { AiSummaryService } from './services/ai-summary.service';
+import { Logger, LogLevel } from '@nestjs/common';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
@@ -31,7 +32,20 @@ function calculateDates(period: string): { startDate: Date; endDate: Date } {
 const DEFAULT_OUTPUT_DIR = 'summaries';
 
 async function bootstrap() {
-  const app = await NestFactory.createApplicationContext(AppModule);
+  // Configure logger levels based on LOG_LEVEL env
+  const logLevel = process.env.LOG_LEVEL || 'log';
+  const logLevels: LogLevel[] =
+    logLevel === 'verbose'
+      ? ['error', 'warn', 'log', 'debug', 'verbose']
+      : logLevel === 'debug'
+        ? ['error', 'warn', 'log', 'debug']
+        : logLevel === 'log' || logLevel === 'info'
+          ? ['error', 'warn', 'log']
+          : ['error', 'warn'];
+
+  const app = await NestFactory.createApplicationContext(AppModule, {
+    logger: logLevels,
+  });
   const appService = app.get(AppService);
   const aiSummaryService = app.get(AiSummaryService);
 

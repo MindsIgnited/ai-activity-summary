@@ -121,13 +121,21 @@ export class AppService {
         } else {
           this.logger.debug('Skipping GitLab commits due to config');
         }
-        // Always fetch merge requests and issues
+        // Always fetch merge requests
         const gitlabMergeRequests = await this.gitlabService.fetchMergeRequests(date, date);
         activities.push(...gitlabMergeRequests.map(mr => this.gitlabService.createMergeRequestActivity(mr)));
-        const gitlabIssues = await this.gitlabService.fetchIssues(date, date);
-        activities.push(...gitlabIssues.map(issue => this.gitlabService.createIssueActivity(issue)));
-        // Only fetch comments if enabled
-        if (this.apiConfig.gitlab.fetchComments !== false) {
+        // Only fetch issues if enabled
+        if (this.apiConfig.gitlab.fetchIssues !== false) {
+          this.logger.debug('Fetching GitLab issues');
+          const gitlabIssues = await this.gitlabService.fetchIssues(date, date);
+          activities.push(...gitlabIssues.map(issue => this.gitlabService.createIssueActivity(issue)));
+        } else {
+          this.logger.debug('Skipping GitLab issues due to config');
+        }
+        // Only fetch comments if enabled and nested fetching is allowed
+        if (this.apiConfig.gitlab.fetchNested === false) {
+          this.logger.debug('Skipping all nested GitLab fetching (comments, notes, etc) due to config');
+        } else if (this.apiConfig.gitlab.fetchComments !== false) {
           this.logger.debug('Fetching GitLab comments');
           const gitlabComments = await this.gitlabService.fetchComments(date, date);
           activities.push(...gitlabComments.map(comment => this.gitlabService.createCommentActivity(comment)));

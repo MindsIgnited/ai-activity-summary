@@ -16,6 +16,14 @@ export interface ApiConfig {
      * If false, disables fetching merge request notes from GitLab (default: true)
      */
     fetchMrNotes?: boolean;
+    /**
+     * If false, disables fetching issues from GitLab (default: true)
+     */
+    fetchIssues?: boolean;
+    /**
+     * If false, disables all nested fetching (comments, notes, etc) from GitLab (default: true). Overrides other nested fetch flags.
+     */
+    fetchNested?: boolean;
   };
   slack: {
     enabled: boolean;
@@ -42,6 +50,7 @@ export interface ApiConfig {
 }
 
 export const getApiConfig = (): ApiConfig => {
+  const fetchNested = process.env.GITLAB_FETCH_NESTED !== 'false';
   return {
     gitlab: {
       enabled: process.env.GITLAB_ENABLED !== 'false',
@@ -49,8 +58,10 @@ export const getApiConfig = (): ApiConfig => {
       accessToken: process.env.GITLAB_ACCESS_TOKEN || '',
       projectIds: process.env.GITLAB_PROJECT_IDS?.split(',') || [],
       fetchCommits: process.env.GITLAB_FETCH_COMMITS !== 'false',
-      fetchComments: process.env.GITLAB_FETCH_COMMENTS !== 'false',
-      fetchMrNotes: process.env.GITLAB_FETCH_MR_NOTES !== 'false',
+      fetchComments: fetchNested ? process.env.GITLAB_FETCH_COMMENTS !== 'false' : false,
+      fetchMrNotes: fetchNested ? process.env.GITLAB_FETCH_MR_NOTES !== 'false' : false,
+      fetchIssues: process.env.GITLAB_FETCH_ISSUES !== 'false',
+      fetchNested,
     },
     slack: {
       enabled: process.env.SLACK_ENABLED !== 'false',
