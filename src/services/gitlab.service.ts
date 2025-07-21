@@ -669,7 +669,7 @@ export class GitLabService {
       id: `gitlab-comment-${comment.id}`,
       type: 'gitlab',
       timestamp: new Date(comment.created_at),
-      title: `Comment on ${noteableType}: ${comment.body.substring(0, 50)}${comment.body.length > 50 ? '...' : ''}`,
+      title: `Comment on ${noteableType}: ${typeof comment.body === 'string' ? comment.body.substring(0, 50) : 'Comment'}${typeof comment.body === 'string' && comment.body.length > 50 ? '...' : ''}`,
       description: comment.body,
       author: comment.author.name,
       url: comment.web_url || '#',

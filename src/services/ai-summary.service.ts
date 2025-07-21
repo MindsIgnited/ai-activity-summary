@@ -221,9 +221,9 @@ export class AiSummaryService {
       if (activity.author) {
         summary += `  👤 ${activity.author}\n`;
       }
-      if (activity.description && activity.description.length > 100) {
+      if (activity.description && typeof activity.description === 'string' && activity.description.length > 100) {
         summary += `  📄 ${activity.description.substring(0, 100)}...\n`;
-      } else if (activity.description) {
+      } else if (activity.description && typeof activity.description === 'string') {
         summary += `  📄 ${activity.description}\n`;
       }
       summary += '\n';

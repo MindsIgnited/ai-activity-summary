@@ -140,9 +140,9 @@ export class AiProviderService {
       if (activity.author) {
         summary += `  👤 ${activity.author}\n`;
       }
-      if (activity.description && activity.description.length > 100) {
+      if (activity.description && typeof activity.description === 'string' && activity.description.length > 100) {
         summary += `  📄 ${activity.description.substring(0, 100)}...\n`;
-      } else if (activity.description) {
+      } else if (activity.description && typeof activity.description === 'string') {
         summary += `  📄 ${activity.description}\n`;
       }
       summary += '\n';
@@ -241,7 +241,9 @@ class OpenAiProvider implements AiProvider {
       const time = new Date(activity.timestamp).toLocaleTimeString();
       const type = activity.type.toUpperCase();
       const author = activity.author ? ` (by ${activity.author})` : '';
-      const description = activity.description ? ` - ${activity.description.substring(0, 300)}` : '';
+      const description = activity.description && typeof activity.description === 'string'
+        ? ` - ${activity.description.substring(0, 300)}`
+        : '';
       return `[${time}] ${type}: ${activity.title}${author}${description}`;
     }).join('\n');
 
@@ -344,7 +346,9 @@ class AnthropicProvider implements AiProvider {
       const time = new Date(activity.timestamp).toLocaleTimeString();
       const type = activity.type.toUpperCase();
       const author = activity.author ? ` (by ${activity.author})` : '';
-      const description = activity.description ? ` - ${activity.description.substring(0, 300)}` : '';
+      const description = activity.description && typeof activity.description === 'string'
+        ? ` - ${activity.description.substring(0, 300)}`
+        : '';
       return `[${time}] ${type}: ${activity.title}${author}${description}`;
     }).join('\n');
 
@@ -449,7 +453,9 @@ class GeminiProvider implements AiProvider {
       const time = new Date(activity.timestamp).toLocaleTimeString();
       const type = activity.type.toUpperCase();
       const author = activity.author ? ` (by ${activity.author})` : '';
-      const description = activity.description ? ` - ${activity.description.substring(0, 300)}` : '';
+      const description = activity.description && typeof activity.description === 'string'
+        ? ` - ${activity.description.substring(0, 300)}`
+        : '';
       return `[${time}] ${type}: ${activity.title}${author}${description}`;
     }).join('\n');
 
@@ -544,7 +550,9 @@ class OllamaProvider implements AiProvider {
       const time = new Date(activity.timestamp).toLocaleTimeString();
       const type = activity.type.toUpperCase();
       const author = activity.author ? ` (by ${activity.author})` : '';
-      const description = activity.description ? ` - ${activity.description.substring(0, 300)}` : '';
+      const description = activity.description && typeof activity.description === 'string'
+        ? ` - ${activity.description.substring(0, 300)}`
+        : '';
       return `[${time}] ${type}: ${activity.title}${author}${description}`;
     }).join('\n');
 
@@ -643,7 +651,9 @@ class HuggingFaceProvider implements AiProvider {
       const time = new Date(activity.timestamp).toLocaleTimeString();
       const type = activity.type.toUpperCase();
       const author = activity.author ? ` (by ${activity.author})` : '';
-      const description = activity.description ? ` - ${activity.description.substring(0, 300)}` : '';
+      const description = activity.description && typeof activity.description === 'string'
+        ? ` - ${activity.description.substring(0, 300)}`
+        : '';
       return `[${time}] ${type}: ${activity.title}${author}${description}`;
     }).join('\n');
 
@@ -944,7 +954,9 @@ class OpenWebUIProvider implements AiProvider {
       const time = new Date(activity.timestamp).toLocaleTimeString();
       const type = activity.type.toUpperCase();
       const author = activity.author ? ` (by ${activity.author})` : '';
-      const description = activity.description ? ` - ${activity.description.substring(0, 300)}` : '';
+      const description = activity.description && typeof activity.description === 'string'
+        ? ` - ${activity.description.substring(0, 300)}`
+        : '';
       return `[${time}] ${type}: ${activity.title}${author}${description}`;
     }).join('\n');
 
