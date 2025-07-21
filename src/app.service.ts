@@ -114,24 +114,27 @@ export class AppService {
       if (this.apiConfig.gitlab.enabled) {
         this.logger.debug('Fetching GitLab activities');
         const gitlabActivities: ActivityData[] = [];
-        // Only fetch commits if enabled
-        if (this.apiConfig.gitlab.fetchCommits !== false) {
-          this.logger.debug('Fetching GitLab commits');
-          const gitlabCommits = await this.gitlabService.fetchCommits(date, date);
-          gitlabActivities.push(...gitlabCommits.map(commit => this.gitlabService.createCommitActivity(commit)));
-        } else {
-          this.logger.debug('Skipping GitLab commits due to config');
+        // Use the new top-level fetches for the full date range
+        const startDate = date;
+        const endDate = date;
+        const [
+          commitsByDate,
+          mrsByDate,
+          issuesByDate
+        ] = await Promise.all([
+          this.gitlabService.fetchCommitsByDateRange(startDate, endDate),
+          this.gitlabService.fetchMergeRequestsByDateRange(startDate, endDate),
+          this.gitlabService.fetchIssuesByDateRange(startDate, endDate),
+        ]);
+        const dateStr = date.toISOString().split('T')[0];
+        if (this.apiConfig.gitlab.fetchCommits !== false && commitsByDate.has(dateStr)) {
+          gitlabActivities.push(...commitsByDate.get(dateStr)!);
         }
-        // Always fetch merge requests
-        const gitlabMergeRequests = await this.gitlabService.fetchMergeRequests(date, date);
-        gitlabActivities.push(...gitlabMergeRequests.map(mr => this.gitlabService.createMergeRequestActivity(mr)));
-        // Only fetch issues if enabled
-        if (this.apiConfig.gitlab.fetchIssues !== false) {
-          this.logger.debug('Fetching GitLab issues');
-          const gitlabIssues = await this.gitlabService.fetchIssues(date, date);
-          gitlabActivities.push(...gitlabIssues.map(issue => this.gitlabService.createIssueActivity(issue)));
-        } else {
-          this.logger.debug('Skipping GitLab issues due to config');
+        if (mrsByDate.has(dateStr)) {
+          gitlabActivities.push(...mrsByDate.get(dateStr)!);
+        }
+        if (this.apiConfig.gitlab.fetchIssues !== false && issuesByDate.has(dateStr)) {
+          gitlabActivities.push(...issuesByDate.get(dateStr)!);
         }
         // Only fetch comments if enabled and nested fetching is allowed
         if (this.apiConfig.gitlab.fetchNested === false) {
@@ -144,7 +147,7 @@ export class AppService {
           this.logger.debug('Skipping GitLab comments due to config');
         }
         activities.push(...gitlabActivities);
-        this.logger.log(`Found ${gitlabActivities.length} GitLab activities for ${date.toISOString().split('T')[0]}`);
+        this.logger.log(`Found ${gitlabActivities.length} GitLab activities for ${dateStr}`);
       } else {
         this.logger.debug('GitLab integration is disabled');
       }
