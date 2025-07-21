@@ -2,6 +2,8 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { AppService } from './app.service';
 import { AiSummaryService } from './services/ai-summary.service';
+import * as fs from 'fs/promises';
+import * as path from 'path';
 
 function calculateDates(period: string): { startDate: Date; endDate: Date } {
   const today = new Date();
@@ -25,6 +27,8 @@ function calculateDates(period: string): { startDate: Date; endDate: Date } {
       throw new Error(`Invalid period: ${period}. Use 'today', 'week', or 'month'`);
   }
 }
+
+const DEFAULT_OUTPUT_DIR = 'summaries';
 
 async function bootstrap() {
   const app = await NestFactory.createApplicationContext(AppModule);
@@ -104,9 +108,11 @@ async function handleAiSummary(args: string[], aiSummaryService: AiSummaryServic
   const endDateIndex = args.indexOf('--end-date');
   const formatIndex = args.indexOf('--format');
   const providerIndex = args.indexOf('--provider');
+  const outputIndex = args.indexOf('--output');
 
   const format = formatIndex !== -1 ? args[formatIndex + 1] as 'json' | 'txt' | 'md' : 'json';
   const provider = providerIndex !== -1 ? args[providerIndex + 1] : undefined;
+  const outputPathArg = outputIndex !== -1 ? args[outputIndex + 1] : undefined;
 
   if (!['json', 'txt', 'md'].includes(format)) {
     throw new Error('Invalid format. Use json, txt, or md');
@@ -124,6 +130,9 @@ async function handleAiSummary(args: string[], aiSummaryService: AiSummaryServic
     return;
   }
 
+  // Ensure output directory exists
+  await fs.mkdir(DEFAULT_OUTPUT_DIR, { recursive: true });
+
   if (dateIndex !== -1) {
     // Single date AI summary
     const date = args[dateIndex + 1];
@@ -135,8 +144,16 @@ async function handleAiSummary(args: string[], aiSummaryService: AiSummaryServic
     const summary = await aiSummaryService.generateDailySummary(date, provider);
 
     if (summary) {
-      const filePath = await aiSummaryService.saveSummary(summary, format);
-      console.log(`AI summary saved to: ${filePath}`);
+      let filePath: string;
+      if (outputPathArg) {
+        filePath = await aiSummaryService.saveSummary(summary, format, outputPathArg);
+      } else {
+        // Default file name: ai-output/YYYY-MM-DD.{format}
+        const ext = format === 'json' ? 'json' : format;
+        filePath = path.join(DEFAULT_OUTPUT_DIR, `ai-summary-${date.replace(/-/g, '')}.${ext}`);
+        await aiSummaryService.saveSummary(summary, format, filePath);
+      }
+      console.log(`AI summary saved to: ${outputPathArg || filePath}`);
       console.log('\n=== AI SUMMARY PREVIEW ===');
       console.log(summary.aiSummary);
     } else {
@@ -158,8 +175,15 @@ async function handleAiSummary(args: string[], aiSummaryService: AiSummaryServic
 
     if (summaries.length > 0) {
       for (const summary of summaries) {
-        const filePath = await aiSummaryService.saveSummary(summary, format);
-        console.log(`AI summary for ${summary.date} saved to: ${filePath}`);
+        let filePath: string;
+        if (outputPathArg) {
+          filePath = await aiSummaryService.saveSummary(summary, format, outputPathArg);
+        } else {
+          const ext = format === 'json' ? 'json' : format;
+          filePath = path.join(DEFAULT_OUTPUT_DIR, `ai-summary-${summary.date.replace(/-/g, '')}.${ext}`);
+          await aiSummaryService.saveSummary(summary, format, filePath);
+        }
+        console.log(`AI summary for ${summary.date} saved to: ${outputPathArg || filePath}`);
       }
       console.log(`\nGenerated ${summaries.length} AI summaries`);
     } else {
@@ -179,8 +203,15 @@ async function handleAiSummary(args: string[], aiSummaryService: AiSummaryServic
 
     if (summaries.length > 0) {
       for (const summary of summaries) {
-        const filePath = await aiSummaryService.saveSummary(summary, format);
-        console.log(`AI summary for ${summary.date} saved to: ${filePath}`);
+        let filePath: string;
+        if (outputPathArg) {
+          filePath = await aiSummaryService.saveSummary(summary, format, outputPathArg);
+        } else {
+          const ext = format === 'json' ? 'json' : format;
+          filePath = path.join(DEFAULT_OUTPUT_DIR, `ai-summary-${summary.date.replace(/-/g, '')}.${ext}`);
+          await aiSummaryService.saveSummary(summary, format, filePath);
+        }
+        console.log(`AI summary for ${summary.date} saved to: ${outputPathArg || filePath}`);
       }
       console.log(`\nGenerated ${summaries.length} AI summaries`);
     } else {
@@ -195,7 +226,7 @@ async function handleActivitySummary(args: string[], appService: AppService) {
   let startDate: Date;
   let endDate: Date;
   const outputIndex = args.indexOf('--output');
-  const outputPath = outputIndex !== -1 ? args[outputIndex + 1] : undefined;
+  const outputPathArg = outputIndex !== -1 ? args[outputIndex + 1] : undefined;
 
   // Check if using --period or --start-date/--end-date
   const periodIndex = args.indexOf('--period');
@@ -236,7 +267,23 @@ async function handleActivitySummary(args: string[], appService: AppService) {
 
   console.log(`Generating activity summary from ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`);
 
+  // Ensure output directory exists
+  await fs.mkdir(DEFAULT_OUTPUT_DIR, { recursive: true });
+
   // Generate summary
+  let outputPath: string | undefined = outputPathArg;
+  if (!outputPathArg) {
+    // Default file name: ai-output/YYYY-MM-DD.json or ai-output/YYYY-MM-DD_YYYY-MM-DD.json
+    if (startDate.toISOString().split('T')[0] === endDate.toISOString().split('T')[0]) {
+      outputPath = path.join(DEFAULT_OUTPUT_DIR, `${startDate.toISOString().split('T')[0]}.json`);
+    } else {
+      outputPath = path.join(
+        DEFAULT_OUTPUT_DIR,
+        `${startDate.toISOString().split('T')[0]}_${endDate.toISOString().split('T')[0]}.json`
+      );
+    }
+  }
+
   const summaries = await appService.generateActivitySummary(startDate, endDate, outputPath);
 
   // Get and display statistics

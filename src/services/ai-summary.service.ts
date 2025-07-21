@@ -140,7 +140,7 @@ export class AiSummaryService {
     }, {} as Record<string, number>);
   }
 
-  async saveSummary(summary: DailySummaryOutput, format: 'json' | 'txt' | 'md' = 'json'): Promise<string> {
+  async saveSummary(summary: DailySummaryOutput, format: 'json' | 'txt' | 'md' = 'json', outputPath?: string): Promise<string> {
     const outputDir = path.join(process.cwd(), 'output');
     const dateStr = summary.date.replace(/-/g, '');
     let filename: string;
@@ -163,10 +163,11 @@ export class AiSummaryService {
         throw new Error(`Unsupported format: ${format}`);
     }
 
-    const filePath = path.join(outputDir, filename);
+    const filePath = outputPath || path.join(outputDir, filename);
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
     await fs.writeFile(filePath, content, 'utf-8');
 
-    this.logger.log(`AI summary saved to ${filename}`);
+    this.logger.log(`AI summary saved to ${filePath}`);
     return filePath;
   }
 
