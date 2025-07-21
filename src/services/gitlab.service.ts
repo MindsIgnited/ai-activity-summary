@@ -202,6 +202,7 @@ export class GitLabService {
 
   /**
    * Fetch all merge requests for the date range and group by date (YYYY-MM-DD)
+   * Only fetch MRs authored by the current user using author_id or author_username.
    */
   public async fetchMergeRequestsByDateRange(startDate: Date, endDate: Date): Promise<Map<string, ActivityData[]>> {
     const projects = await this.getProjects();
@@ -211,15 +212,16 @@ export class GitLabService {
       projects.map(project =>
         projectLimit(async () => {
           try {
-            const url = `${this.getBaseUrl()}/api/v4/projects/${project.id}/merge_requests?created_after=${startDate.toISOString()}&created_before=${endDate.toISOString()}&per_page=100&state=all`;
+            // Use author_id or author_username to filter by current user
+            const authorParam = this.currentUser?.id
+              ? `author_id=${this.currentUser.id}`
+              : this.currentUser?.username
+                ? `author_username=${encodeURIComponent(this.currentUser.username)}`
+                : '';
+            const url = `${this.getBaseUrl()}/api/v4/projects/${project.id}/merge_requests?created_after=${startDate.toISOString()}&created_before=${endDate.toISOString()}&per_page=100&state=all${authorParam ? `&${authorParam}` : ''}`;
             const response = await this.makeRequest(url);
             const projectMRs = response.map((mr: GitLabMergeRequest) => this.createMergeRequestActivity({ ...mr, project_name: project.name }));
-            // Filter by current user
-            const userMRs = projectMRs.filter(mr =>
-              mr.metadata?.authorEmail === this.currentUser?.email ||
-              mr.author === this.currentUser?.name
-            );
-            allMRs.push(...userMRs);
+            allMRs.push(...projectMRs);
           } catch (error) {
             this.logger.warn(`Failed to fetch merge requests for project ${project.name}:`, error);
           }
@@ -238,6 +240,7 @@ export class GitLabService {
 
   /**
    * Fetch all issues for the date range and group by date (YYYY-MM-DD)
+   * Only fetch issues authored by the current user using author_id or author_username.
    */
   public async fetchIssuesByDateRange(startDate: Date, endDate: Date): Promise<Map<string, ActivityData[]>> {
     const projects = await this.getProjects();
@@ -247,15 +250,16 @@ export class GitLabService {
       projects.map(project =>
         projectLimit(async () => {
           try {
-            const url = `${this.getBaseUrl()}/api/v4/projects/${project.id}/issues?created_after=${startDate.toISOString()}&created_before=${endDate.toISOString()}&per_page=100&state=all`;
+            // Use author_id or author_username to filter by current user
+            const authorParam = this.currentUser?.id
+              ? `author_id=${this.currentUser.id}`
+              : this.currentUser?.username
+                ? `author_username=${encodeURIComponent(this.currentUser.username)}`
+                : '';
+            const url = `${this.getBaseUrl()}/api/v4/projects/${project.id}/issues?created_after=${startDate.toISOString()}&created_before=${endDate.toISOString()}&per_page=100&state=all${authorParam ? `&${authorParam}` : ''}`;
             const response = await this.makeRequest(url);
             const projectIssues = response.map((issue: GitLabIssue) => this.createIssueActivity({ ...issue, project_name: project.name }));
-            // Filter by current user
-            const userIssues = projectIssues.filter(issue =>
-              issue.metadata?.authorEmail === this.currentUser?.email ||
-              issue.author === this.currentUser?.name
-            );
-            allIssues.push(...userIssues);
+            allIssues.push(...projectIssues);
           } catch (error) {
             this.logger.warn(`Failed to fetch issues for project ${project.name}:`, error);
           }
