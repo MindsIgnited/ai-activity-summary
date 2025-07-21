@@ -1,33 +1,30 @@
 import { NestFactory } from '@nestjs/core';
+import { Logger, LogLevel } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { AppService } from './app.service';
 import { AiSummaryService } from './services/ai-summary.service';
-import { Logger, LogLevel } from '@nestjs/common';
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { setEndOfDay, setStartOfDay } from './utils/date.utils';
 
 function calculateDates(period: string): { startDate: Date; endDate: Date } {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const today = setStartOfDay(new Date());
 
   switch (period.toLowerCase()) {
     case 'today': {
-      const end = new Date(today);
-      end.setHours(23, 59, 59, 999);
+      const end = setEndOfDay(today);
       return { startDate: today, endDate: end };
     }
     case 'week': {
       const weekAgo = new Date(today);
       weekAgo.setDate(today.getDate() - 7);
-      const end = new Date(today);
-      end.setHours(23, 59, 59, 999);
+      const end = setEndOfDay(today);
       return { startDate: weekAgo, endDate: end };
     }
     case 'month': {
       const monthAgo = new Date(today);
       monthAgo.setDate(today.getDate() - 30);
-      const end = new Date(today);
-      end.setHours(23, 59, 59, 999);
+      const end = setEndOfDay(today);
       return { startDate: monthAgo, endDate: end };
     }
     default:
@@ -275,7 +272,7 @@ async function handleActivitySummary(args: string[], appService: AppService) {
 
     startDate = new Date(args[startDateIndex + 1]);
     endDate = new Date(args[endDateIndex + 1]);
-    endDate.setHours(23, 59, 59, 999);
+    endDate = setEndOfDay(endDate);
 
     if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
       throw new Error('Invalid date format. Use YYYY-MM-DD');

@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ActivityData } from '../app.service';
 import pLimit from 'p-limit';
+import { setEndOfDay } from '../utils/date.utils';
 
 interface GitLabCommit {
   id: string;
@@ -109,12 +110,6 @@ interface GitLabUser {
   name: string;
   username: string;
   email: string;
-}
-
-function setEndOfDay(date: Date): Date {
-  const d = new Date(date);
-  d.setHours(23, 59, 59, 999);
-  return d;
 }
 
 @Injectable()

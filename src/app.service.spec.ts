@@ -4,6 +4,7 @@ import { JiraService } from './services/jira.service';
 import { TeamsService } from './services/teams.service';
 import { GitLabService } from './services/gitlab.service';
 import { SlackService } from './services/slack.service';
+import { setEndOfDay } from './utils/date.utils';
 
 describe('AppService', () => {
   let service: AppService;
@@ -27,12 +28,6 @@ describe('AppService', () => {
   const mockSlackService = {
     fetchActivities: jest.fn(),
   };
-
-  function setEndOfDay(date: Date): Date {
-    const d = new Date(date);
-    d.setHours(23, 59, 59, 999);
-    return d;
-  }
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({

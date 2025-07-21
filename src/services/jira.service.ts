@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ActivityData } from '../app.service';
+import { setEndOfDay } from '../utils/date.utils';
 
 interface JiraIssue {
   id: string;
@@ -75,12 +76,6 @@ interface JiraChangelog {
     fromString?: string;
     toString?: string;
   }[];
-}
-
-function setEndOfDay(date: Date): Date {
-  const d = new Date(date);
-  d.setHours(23, 59, 59, 999);
-  return d;
 }
 
 @Injectable()
