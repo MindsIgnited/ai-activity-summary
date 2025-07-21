@@ -113,22 +113,23 @@ export class AppService {
       // Fetch from GitLab API if enabled
       if (this.apiConfig.gitlab.enabled) {
         this.logger.debug('Fetching GitLab activities');
+        const gitlabActivities: ActivityData[] = [];
         // Only fetch commits if enabled
         if (this.apiConfig.gitlab.fetchCommits !== false) {
           this.logger.debug('Fetching GitLab commits');
           const gitlabCommits = await this.gitlabService.fetchCommits(date, date);
-          activities.push(...gitlabCommits.map(commit => this.gitlabService.createCommitActivity(commit)));
+          gitlabActivities.push(...gitlabCommits.map(commit => this.gitlabService.createCommitActivity(commit)));
         } else {
           this.logger.debug('Skipping GitLab commits due to config');
         }
         // Always fetch merge requests
         const gitlabMergeRequests = await this.gitlabService.fetchMergeRequests(date, date);
-        activities.push(...gitlabMergeRequests.map(mr => this.gitlabService.createMergeRequestActivity(mr)));
+        gitlabActivities.push(...gitlabMergeRequests.map(mr => this.gitlabService.createMergeRequestActivity(mr)));
         // Only fetch issues if enabled
         if (this.apiConfig.gitlab.fetchIssues !== false) {
           this.logger.debug('Fetching GitLab issues');
           const gitlabIssues = await this.gitlabService.fetchIssues(date, date);
-          activities.push(...gitlabIssues.map(issue => this.gitlabService.createIssueActivity(issue)));
+          gitlabActivities.push(...gitlabIssues.map(issue => this.gitlabService.createIssueActivity(issue)));
         } else {
           this.logger.debug('Skipping GitLab issues due to config');
         }
@@ -138,10 +139,12 @@ export class AppService {
         } else if (this.apiConfig.gitlab.fetchComments !== false) {
           this.logger.debug('Fetching GitLab comments');
           const gitlabComments = await this.gitlabService.fetchComments(date, date);
-          activities.push(...gitlabComments.map(comment => this.gitlabService.createCommentActivity(comment)));
+          gitlabActivities.push(...gitlabComments.map(comment => this.gitlabService.createCommentActivity(comment)));
         } else {
           this.logger.debug('Skipping GitLab comments due to config');
         }
+        activities.push(...gitlabActivities);
+        this.logger.log(`Found ${gitlabActivities.length} GitLab activities for ${date.toISOString().split('T')[0]}`);
       } else {
         this.logger.debug('GitLab integration is disabled');
       }

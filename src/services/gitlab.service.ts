@@ -277,7 +277,7 @@ export class GitLabService {
     return results.flat();
   }
 
-  public async fetchComments(startDate: Date, endDate: Date): Promise<GitLabComment[]> {
+public async fetchComments(startDate: Date, endDate: Date): Promise<GitLabComment[]> {
     const comments: GitLabComment[] = [];
     const projects = await this.getProjects();
 
