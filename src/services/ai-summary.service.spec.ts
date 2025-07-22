@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { AiSummaryService } from './ai-summary.service';
-import { ActivityData } from './ai-provider.service';
+import { ActivityData } from '../utils/ai.utils';
 import { AiProviderService } from './ai-provider.service';
 import * as fs from 'fs/promises';
 import * as path from 'path';

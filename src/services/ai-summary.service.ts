@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { AiProviderService, ActivityData } from './ai-provider.service';
+import { AiProviderService } from './ai-provider.service';
+import { ActivityData } from '../utils/ai.utils';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 

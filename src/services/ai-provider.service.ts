@@ -1,20 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { BaseAiProvider, ActivityData } from '../utils/ai.utils';
 
 export interface AiProvider {
   name: string;
   generateSummary(activities: ActivityData[], date: string): Promise<string>;
-}
-
-export interface ActivityData {
-  id: string;
-  type: 'gitlab' | 'slack' | 'teams' | 'jira';
-  timestamp: string;
-  title: string;
-  description?: string;
-  author?: string;
-  url?: string;
-  metadata?: Record<string, any>;
 }
 
 @Injectable()
@@ -140,10 +130,11 @@ export class AiProviderService {
       if (activity.author) {
         summary += `  👤 ${activity.author}\n`;
       }
-      if (activity.description && typeof activity.description === 'string' && activity.description.length > 100) {
-        summary += `  📄 ${activity.description.substring(0, 100)}...\n`;
-      } else if (activity.description && typeof activity.description === 'string') {
-        summary += `  📄 ${activity.description}\n`;
+      if (activity.description && typeof activity.description === 'string') {
+        const description = activity.description.length > 100
+          ? `${activity.description.substring(0, 100)}...`
+          : activity.description;
+        summary += `  📄 ${description}\n`;
       }
       summary += '\n';
     }
@@ -179,11 +170,13 @@ export class AiProviderService {
 }
 
 // OpenAI Provider
-class OpenAiProvider implements AiProvider {
+class OpenAiProvider extends BaseAiProvider implements AiProvider {
   name = 'openai';
   private readonly logger = new Logger(OpenAiProvider.name);
 
-  constructor(private readonly configService: ConfigService) { }
+  constructor(private readonly configService: ConfigService) {
+    super();
+  }
 
   async generateSummary(activities: ActivityData[], date: string): Promise<string> {
     const apiKey = this.configService.get<string>('OPENAI_API_KEY');
@@ -234,56 +227,6 @@ class OpenAiProvider implements AiProvider {
       this.logger.error('OpenAI API request failed:', error);
       throw error;
     }
-  }
-
-  private buildPrompt(activities: ActivityData[], date: string): string {
-    const activityText = activities.map(activity => {
-      const time = new Date(activity.timestamp).toLocaleTimeString();
-      const type = activity.type.toUpperCase();
-      const author = activity.author ? ` (by ${activity.author})` : '';
-      const description = activity.description && typeof activity.description === 'string'
-        ? ` - ${activity.description.substring(0, 300)}`
-        : '';
-      return `[${time}] ${type}: ${activity.title}${author}${description}`;
-    }).join('\n');
-
-    return `Create a comprehensive daily activity summary for ${date} based on the following activities:
-
-${activityText}
-
-Please provide a structured summary that includes:
-
-## 📊 Executive Summary
-- Total activities and key metrics
-- Most productive time periods
-- Primary focus areas
-
-## 🎯 Key Accomplishments
-- Major milestones achieved
-- Completed tasks and deliverables
-- Significant progress made
-
-## 🤝 Collaboration & Communication
-- Team interactions and meetings
-- Cross-functional work
-- Communication patterns
-
-## 📈 Productivity Insights
-- Time allocation analysis
-- Work patterns and trends
-- Efficiency observations
-
-## ⚠️ Areas of Attention
-- Potential blockers or delays
-- Items requiring follow-up
-- Areas needing support or resources
-
-## 🎯 Action Items & Recommendations
-- Next steps and priorities
-- Suggested improvements
-- Follow-up actions needed
-
-Keep the summary professional, actionable, and suitable for stakeholders. Use clear headings, bullet points, and concise language. Focus on insights that add value beyond just listing activities.`;
   }
 }
 

@@ -3,6 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import { ActivityData } from '../app.service';
 import pLimit from 'p-limit';
 import { setEndOfDay } from '../utils/date.utils';
+import { createTracedRequest } from '../utils/http.utils';
+import { safeSubstring } from '../utils/string.utils';
 
 interface GitLabCommit {
   id: string;
@@ -127,7 +129,7 @@ export class GitLabService {
 
   public async getCurrentUser(): Promise<GitLabUser> {
     const url = `${this.getBaseUrl()}/api/v4/user`;
-    return await this.makeRequest(url);
+    return await this.makeGitLabRequest(url);
   }
 
   // For compatibility, add wrappers for fetchCommits, fetchMergeRequests, fetchIssues if needed
@@ -259,7 +261,7 @@ export class GitLabService {
         projectLimit(async () => {
           try {
             const url = `${this.getBaseUrl()}/api/v4/projects/${project.id}/repository/commits?since=${startDate.toISOString()}&until=${endDate.toISOString()}&per_page=100`;
-            const response = await this.makeRequest(url);
+            const response = await this.makeGitLabRequest(url);
             const projectCommits = response.map((commit: GitLabCommit) => this.createCommitActivity({ ...commit, project_name: project.name }));
             // Filter by current user
             const userCommits = projectCommits.filter(commit =>
@@ -303,7 +305,7 @@ export class GitLabService {
                 ? `author_username=${encodeURIComponent(this.currentUser.username)}`
                 : '';
             const url = `${this.getBaseUrl()}/api/v4/projects/${project.id}/merge_requests?created_after=${startDate.toISOString()}&created_before=${endDate.toISOString()}&per_page=100&state=all${authorParam ? `&${authorParam}` : ''}`;
-            const response = await this.makeRequest(url);
+            const response = await this.makeGitLabRequest(url);
             const projectMRs = response.map((mr: GitLabMergeRequest) => this.createMergeRequestActivity({ ...mr, project_name: project.name }));
             allMRs.push(...projectMRs);
           } catch (error) {
@@ -342,7 +344,7 @@ export class GitLabService {
                 ? `author_username=${encodeURIComponent(this.currentUser.username)}`
                 : '';
             const url = `${this.getBaseUrl()}/api/v4/projects/${project.id}/issues?created_after=${startDate.toISOString()}&created_before=${endDate.toISOString()}&per_page=100&state=all${authorParam ? `&${authorParam}` : ''}`;
-            const response = await this.makeRequest(url);
+            const response = await this.makeGitLabRequest(url);
             const projectIssues = response.map((issue: GitLabIssue) => this.createIssueActivity({ ...issue, project_name: project.name }));
             allIssues.push(...projectIssues);
           } catch (error) {
@@ -414,11 +416,11 @@ export class GitLabService {
 
     try {
       // First get merge requests, then get comments for each
-      const mrs = await this.makeRequest(`${this.getBaseUrl()}/api/v4/projects/${project.id}/merge_requests?per_page=100&state=all`);
+      const mrs = await this.makeGitLabRequest(`${this.getBaseUrl()}/api/v4/projects/${project.id}/merge_requests?per_page=100&state=all`);
 
       for (const mr of mrs) {
         const url = `${this.getBaseUrl()}/api/v4/projects/${project.id}/merge_requests/${mr.iid}/notes?per_page=100`;
-        const response = await this.makeRequest(url);
+        const response = await this.makeGitLabRequest(url);
 
         const filteredComments = response.filter((comment: GitLabComment) => {
           const commentDate = new Date(comment.created_at);
@@ -456,11 +458,11 @@ export class GitLabService {
 
     try {
       // First get issues, then get comments for each
-      const issues = await this.makeRequest(`${this.getBaseUrl()}/api/v4/projects/${project.id}/issues?per_page=100&state=all`);
+      const issues = await this.makeGitLabRequest(`${this.getBaseUrl()}/api/v4/projects/${project.id}/issues?per_page=100&state=all`);
 
       for (const issue of issues) {
         const url = `${this.getBaseUrl()}/api/v4/projects/${project.id}/issues/${issue.iid}/notes?per_page=100`;
-        const response = await this.makeRequest(url);
+        const response = await this.makeGitLabRequest(url);
 
         const filteredComments = response.filter((comment: GitLabComment) => {
           const commentDate = new Date(comment.created_at);
@@ -498,11 +500,11 @@ export class GitLabService {
 
     try {
       // First get commits, then get comments for each
-      const commits = await this.makeRequest(`${this.getBaseUrl()}/api/v4/projects/${project.id}/repository/commits?per_page=100`);
+      const commits = await this.makeGitLabRequest(`${this.getBaseUrl()}/api/v4/projects/${project.id}/repository/commits?per_page=100`);
 
       for (const commit of commits) {
         const url = `${this.getBaseUrl()}/api/v4/projects/${project.id}/repository/commits/${commit.id}/comments?per_page=100`;
-        const response = await this.makeRequest(url);
+        const response = await this.makeGitLabRequest(url);
 
         const filteredComments = response.filter((comment: GitLabComment) => {
           const commentDate = new Date(comment.created_at);
@@ -548,7 +550,7 @@ export class GitLabService {
     for (const projectId of projectIds) {
       try {
         const url = `${this.getBaseUrl()}/api/v4/projects/${projectId.trim()}`;
-        const project = await this.makeRequest(url);
+        const project = await this.makeGitLabRequest(url);
         projects.push(project);
       } catch (error) {
         this.logger.warn(`Failed to fetch project ${projectId}:`, error);
@@ -568,28 +570,16 @@ export class GitLabService {
     return this.configService.get<string>('GITLAB_BASE_URL') || 'https://gitlab.com';
   }
 
-  private async makeRequest(url: string): Promise<any> {
+  private makeRequest = createTracedRequest('GitLab', this.logger);
+
+  private async makeGitLabRequest(url: string): Promise<any> {
     const accessToken = this.configService.get<string>('GITLAB_ACCESS_TOKEN');
-    const start = Date.now();
-    this.logger.verbose(`[TRACE] GET ${url} - sending request`);
-    try {
-      const response = await fetch(url, {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Accept': 'application/json',
-        },
-      });
-      const duration = Date.now() - start;
-      this.logger.verbose(`[TRACE] GET ${url} - status ${response.status} (${duration}ms)`);
-      if (!response.ok) {
-        throw new Error(`GitLab API request failed: ${response.status} ${response.statusText}`);
-      }
-      return response.json();
-    } catch (error) {
-      const duration = Date.now() - start;
-      this.logger.error(`[TRACE] GET ${url} - ERROR after ${duration}ms: ${error}`);
-      throw error;
-    }
+    return this.makeRequest(url, {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Accept': 'application/json',
+      },
+    });
   }
 
   public createCommitActivity(commit: GitLabCommit): ActivityData {
@@ -669,7 +659,7 @@ export class GitLabService {
       id: `gitlab-comment-${comment.id}`,
       type: 'gitlab',
       timestamp: new Date(comment.created_at),
-      title: `Comment on ${noteableType}: ${typeof comment.body === 'string' ? comment.body.substring(0, 50) : 'Comment'}${typeof comment.body === 'string' && comment.body.length > 50 ? '...' : ''}`,
+      title: `Comment on ${noteableType}: ${safeSubstring(comment.body, 0, 50)}${comment.body && typeof comment.body === 'string' && comment.body.length > 50 ? '...' : ''}`,
       description: comment.body,
       author: comment.author.name,
       url: comment.web_url || '#',
