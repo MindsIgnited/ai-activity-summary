@@ -3,7 +3,9 @@ import { JiraService } from './services/jira.service';
 import { TeamsService } from './services/teams.service';
 import { GitLabService } from './services/gitlab.service';
 import { SlackService } from './services/slack.service';
-import { getApiConfig } from './config/api.config';
+import { BaseActivityService } from './services/base-activity.service';
+import { ConfigurationService } from './config/api.config';
+import { ErrorUtils } from './utils/error.utils';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
@@ -44,13 +46,13 @@ export interface InvoiceData {
 @Injectable()
 export class AppService {
   private readonly logger = new Logger(AppService.name);
-  private readonly apiConfig = getApiConfig();
 
   constructor(
     private readonly jiraService: JiraService,
     private readonly teamsService: TeamsService,
     private readonly gitlabService: GitLabService,
     private readonly slackService: SlackService,
+    private readonly configService: ConfigurationService,
   ) { }
 
   async generateActivitySummary(
@@ -60,27 +62,6 @@ export class AppService {
   ): Promise<DailySummary[]> {
     this.logger.log(`Generating activity summary from ${startDate.toISOString()} to ${endDate.toISOString()}`);
 
-    // Pre-fetch all GitLab top-level data for the range
-    let gitlabCommitsByDate: Map<string, ActivityData[]> = new Map();
-    let gitlabMRsByDate: Map<string, ActivityData[]> = new Map();
-    let gitlabIssuesByDate: Map<string, ActivityData[]> = new Map();
-    if (this.apiConfig.gitlab.enabled) {
-      this.logger.debug('Pre-fetching all GitLab top-level activities for the date range');
-      try {
-        [gitlabCommitsByDate, gitlabMRsByDate, gitlabIssuesByDate] = await Promise.all([
-          this.apiConfig.gitlab.fetchCommits !== false ? this.gitlabService.fetchCommitsByDateRange(startDate, endDate) : Promise.resolve(new Map()),
-          this.gitlabService.fetchMergeRequestsByDateRange(startDate, endDate),
-          this.apiConfig.gitlab.fetchIssues !== false ? this.gitlabService.fetchIssuesByDateRange(startDate, endDate) : Promise.resolve(new Map()),
-        ]);
-      } catch (error) {
-        this.logger.error('Error pre-fetching GitLab activities:', error);
-        // Continue with empty maps if GitLab fails
-        gitlabCommitsByDate = new Map();
-        gitlabMRsByDate = new Map();
-        gitlabIssuesByDate = new Map();
-      }
-    }
-
     const summaries: DailySummary[] = [];
     const currentDate = new Date(startDate);
 
@@ -88,62 +69,27 @@ export class AppService {
       const dateStr = currentDate.toISOString().split('T')[0];
       const activities: ActivityData[] = [];
 
-      // Slack
-      if (this.apiConfig.slack.enabled) {
-        this.logger.debug('Fetching Slack activities');
-        const slackActivities = await this.slackService.fetchActivities(currentDate);
-        activities.push(...slackActivities);
-      } else {
-        this.logger.debug('Slack integration is disabled');
-      }
+      // Fetch activities from all configured services
+      const services: Array<{ service: BaseActivityService; config: any; name: string }> = [
+        { service: this.slackService as BaseActivityService, config: this.configService.getSlackConfig(), name: 'Slack' },
+        { service: this.teamsService as BaseActivityService, config: this.configService.getTeamsConfig(), name: 'Teams' },
+        { service: this.jiraService as BaseActivityService, config: this.configService.getJiraConfig(), name: 'Jira' },
+        { service: this.gitlabService as BaseActivityService, config: this.configService.getGitLabConfig(), name: 'GitLab' },
+      ];
 
-      // Teams
-      if (this.apiConfig.teams.enabled) {
-        this.logger.debug('Fetching Teams activities');
-        const teamsActivities = await this.teamsService.fetchActivities(currentDate);
-        activities.push(...teamsActivities);
-      } else {
-        this.logger.debug('Teams integration is disabled');
-      }
-
-      // Jira
-      if (this.apiConfig.jira.enabled) {
-        this.logger.debug('Fetching Jira activities');
-        const jiraActivities = await this.jiraService.fetchActivities(currentDate);
-        activities.push(...jiraActivities);
-      } else {
-        this.logger.debug('Jira integration is disabled');
-      }
-
-      // GitLab (use pre-fetched maps)
-      if (this.apiConfig.gitlab.enabled) {
-        this.logger.debug('Aggregating GitLab activities for the day');
-        const gitlabActivities: ActivityData[] = [];
-        if (this.apiConfig.gitlab.fetchCommits !== false && gitlabCommitsByDate.has(dateStr)) {
-          gitlabActivities.push(...gitlabCommitsByDate.get(dateStr)!);
-        }
-        if (gitlabMRsByDate.has(dateStr)) {
-          gitlabActivities.push(...gitlabMRsByDate.get(dateStr)!);
-        }
-        if (this.apiConfig.gitlab.fetchIssues !== false && gitlabIssuesByDate.has(dateStr)) {
-          gitlabActivities.push(...gitlabIssuesByDate.get(dateStr)!);
-        }
-        // Only fetch nested data for the day if enabled
-        if (this.apiConfig.gitlab.fetchNotes !== false && this.apiConfig.gitlab.fetchNested !== false && this.apiConfig.gitlab.fetchComments !== false) {
-          this.logger.debug('Fetching GitLab comments for the day');
-          const gitlabComments = await this.gitlabService.fetchComments(currentDate, currentDate);
-          gitlabActivities.push(...gitlabComments.map(comment => this.gitlabService.createCommentActivity(comment)));
-        } else if (this.apiConfig.gitlab.fetchNotes === false) {
-          this.logger.debug('Skipping all GitLab note/comment fetching due to GITLAB_FETCH_NOTES=false');
-        } else if (this.apiConfig.gitlab.fetchNested === false) {
-          this.logger.debug('Skipping all nested GitLab fetching (comments, notes, etc) due to GITLAB_FETCH_NESTED=false');
+      for (const { service, config, name } of services) {
+        if (config.enabled) {
+          this.logger.debug(`Fetching ${name} activities`);
+          try {
+            const serviceActivities = await service.fetchActivities(currentDate);
+            activities.push(...serviceActivities);
+            this.logger.debug(`Found ${serviceActivities.length} ${name} activities for ${dateStr}`);
+          } catch (error) {
+            this.logger.error(`Error fetching ${name} activities for ${dateStr}:`, error);
+          }
         } else {
-          this.logger.debug('Skipping GitLab comments due to GITLAB_FETCH_COMMENTS=false');
+          this.logger.debug(`${name} integration is disabled`);
         }
-        activities.push(...gitlabActivities);
-        this.logger.log(`Found ${gitlabActivities.length} GitLab activities for ${dateStr}`);
-      } else {
-        this.logger.debug('GitLab integration is disabled');
       }
 
       const summary = this.createDailySummary(currentDate, activities);
@@ -161,33 +107,29 @@ export class AppService {
   }
 
   private async fetchDailyActivities(date: Date): Promise<ActivityData[]> {
-    // Only fetch Slack, Teams, Jira for the day
     const activities: ActivityData[] = [];
-    try {
-      if (this.apiConfig.slack.enabled) {
-        this.logger.debug('Fetching Slack activities');
-        const slackActivities = await this.slackService.fetchActivities(date);
-        activities.push(...slackActivities);
+
+    const services: Array<{ service: BaseActivityService; config: any; name: string }> = [
+      { service: this.slackService as BaseActivityService, config: this.configService.getSlackConfig(), name: 'Slack' },
+      { service: this.teamsService as BaseActivityService, config: this.configService.getTeamsConfig(), name: 'Teams' },
+      { service: this.jiraService as BaseActivityService, config: this.configService.getJiraConfig(), name: 'Jira' },
+      { service: this.gitlabService as BaseActivityService, config: this.configService.getGitLabConfig(), name: 'GitLab' },
+    ];
+
+    for (const { service, config, name } of services) {
+      if (config.enabled) {
+        this.logger.debug(`Fetching ${name} activities`);
+        try {
+          const serviceActivities = await service.fetchActivities(date);
+          activities.push(...serviceActivities);
+        } catch (error) {
+          this.logger.error(`Error fetching ${name} activities:`, error);
+        }
       } else {
-        this.logger.debug('Slack integration is disabled');
+        this.logger.debug(`${name} integration is disabled`);
       }
-      if (this.apiConfig.teams.enabled) {
-        this.logger.debug('Fetching Teams activities');
-        const teamsActivities = await this.teamsService.fetchActivities(date);
-        activities.push(...teamsActivities);
-      } else {
-        this.logger.debug('Teams integration is disabled');
-      }
-      if (this.apiConfig.jira.enabled) {
-        this.logger.debug('Fetching Jira activities');
-        const jiraActivities = await this.jiraService.fetchActivities(date);
-        activities.push(...jiraActivities);
-      } else {
-        this.logger.debug('Jira integration is disabled');
-      }
-    } catch (error) {
-      this.logger.error(`Error fetching activities for ${date.toISOString()}:`, error);
     }
+
     return activities;
   }
 
@@ -250,7 +192,7 @@ export class AppService {
 
       this.logger.log(`Successfully wrote summary to ${outputPath}`);
     } catch (error) {
-      this.logger.error(`Error writing summary to file: ${error.message}`);
+      ErrorUtils.logError(this.logger, error as Error, 'write-summary-to-file', { outputPath });
       throw error;
     }
   }

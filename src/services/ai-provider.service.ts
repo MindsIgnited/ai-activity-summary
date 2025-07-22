@@ -1,6 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { BaseAiProvider, ActivityData } from '../utils/ai.utils';
+import { BaseAiProvider, ActivityData, buildStandardPrompt } from '../utils/ai.utils';
+import { createAiRequest } from '../utils/ai-request.utils';
+import { formatContentForDisplay } from '../utils/string.utils';
+import { ErrorUtils, AuthError, AiProviderError } from '../utils/error.utils';
 
 export interface AiProvider {
   name: string;
@@ -130,11 +133,8 @@ export class AiProviderService {
       if (activity.author) {
         summary += `  👤 ${activity.author}\n`;
       }
-      if (activity.description && typeof activity.description === 'string') {
-        const description = activity.description.length > 100
-          ? `${activity.description.substring(0, 100)}...`
-          : activity.description;
-        summary += `  📄 ${description}\n`;
+      if (activity.description) {
+        summary += `  📄 ${formatContentForDisplay(activity.description, 100)}\n`;
       }
       summary += '\n';
     }
@@ -173,6 +173,7 @@ export class AiProviderService {
 class OpenAiProvider extends BaseAiProvider implements AiProvider {
   name = 'openai';
   private readonly logger = new Logger(OpenAiProvider.name);
+  private readonly makeRequest = createAiRequest('OpenAI', this.logger);
 
   constructor(private readonly configService: ConfigService) {
     super();
@@ -184,21 +185,18 @@ class OpenAiProvider extends BaseAiProvider implements AiProvider {
     const baseUrl = this.configService.get<string>('OPENAI_BASE_URL') || 'https://api.openai.com/v1';
 
     if (!apiKey) {
-      throw new Error('OPENAI_API_KEY is required');
+      throw ErrorUtils.createAuthError('OPENAI_API_KEY is required', 'OpenAI');
     }
 
     const prompt = this.buildPrompt(activities, date);
 
     try {
-      const start = Date.now();
-      this.logger.verbose(`[TRACE] POST ${baseUrl}/chat/completions - sending request`);
-      const response = await fetch(`${baseUrl}/chat/completions`, {
-        method: 'POST',
+      const data = await this.makeRequest(`${baseUrl}/chat/completions`, {
         headers: {
           'Authorization': `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
+        body: {
           model,
           messages: [
             {
@@ -212,16 +210,12 @@ class OpenAiProvider extends BaseAiProvider implements AiProvider {
           ],
           max_tokens: 1500,
           temperature: 0.3,
-        }),
+        },
+        timeout: 60000, // 60 second timeout for AI requests
+        retryConfig: 'conservative',
+        enableCircuitBreaker: true,
       });
-      const duration = Date.now() - start;
-      this.logger.verbose(`[TRACE] POST ${baseUrl}/chat/completions - status ${response.status} (${duration}ms)`);
 
-      if (!response.ok) {
-        throw new Error(`OpenAI API error: ${response.status} ${response.statusText}`);
-      }
-
-      const data = await response.json();
       return data.choices[0].message.content.trim();
     } catch (error) {
       this.logger.error('OpenAI API request failed:', error);
@@ -231,33 +225,33 @@ class OpenAiProvider extends BaseAiProvider implements AiProvider {
 }
 
 // Anthropic Provider
-class AnthropicProvider implements AiProvider {
+class AnthropicProvider extends BaseAiProvider implements AiProvider {
   name = 'anthropic';
   private readonly logger = new Logger(AnthropicProvider.name);
+  private readonly makeRequest = createAiRequest('Anthropic', this.logger);
 
-  constructor(private readonly configService: ConfigService) { }
+  constructor(private readonly configService: ConfigService) {
+    super();
+  }
 
   async generateSummary(activities: ActivityData[], date: string): Promise<string> {
     const apiKey = this.configService.get<string>('ANTHROPIC_API_KEY');
     const model = this.configService.get<string>('ANTHROPIC_MODEL') || 'claude-3-haiku-20240307';
 
     if (!apiKey) {
-      throw new Error('ANTHROPIC_API_KEY is required');
+      throw ErrorUtils.createAuthError('ANTHROPIC_API_KEY is required', 'Anthropic');
     }
 
     const prompt = this.buildPrompt(activities, date);
 
     try {
-      const start = Date.now();
-      this.logger.verbose(`[TRACE] POST https://api.anthropic.com/v1/messages - sending request`);
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
+      const data = await this.makeRequest('https://api.anthropic.com/v1/messages', {
         headers: {
           'x-api-key': apiKey,
           'anthropic-version': '2023-06-01',
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
+        body: {
           model,
           max_tokens: 1500,
           temperature: 0.3,
@@ -267,71 +261,17 @@ class AnthropicProvider implements AiProvider {
               content: prompt,
             },
           ],
-        }),
+        },
+        timeout: 60000, // 60 second timeout for AI requests
+        retryConfig: 'conservative',
+        enableCircuitBreaker: true,
       });
-      const duration = Date.now() - start;
-      this.logger.verbose(`[TRACE] POST https://api.anthropic.com/v1/messages - status ${response.status} (${duration}ms)`);
 
-      if (!response.ok) {
-        throw new Error(`Anthropic API error: ${response.status} ${response.statusText}`);
-      }
-
-      const data = await response.json();
       return data.content[0].text.trim();
     } catch (error) {
       this.logger.error('Anthropic API request failed:', error);
       throw error;
     }
-  }
-
-  private buildPrompt(activities: ActivityData[], date: string): string {
-    const activityText = activities.map(activity => {
-      const time = new Date(activity.timestamp).toLocaleTimeString();
-      const type = activity.type.toUpperCase();
-      const author = activity.author ? ` (by ${activity.author})` : '';
-      const description = activity.description && typeof activity.description === 'string'
-        ? ` - ${activity.description.substring(0, 300)}`
-        : '';
-      return `[${time}] ${type}: ${activity.title}${author}${description}`;
-    }).join('\n');
-
-    return `Create a comprehensive daily activity summary for ${date} based on the following activities:
-
-${activityText}
-
-Please provide a structured summary that includes:
-
-## 📊 Executive Summary
-- Total activities and key metrics
-- Most productive time periods
-- Primary focus areas
-
-## 🎯 Key Accomplishments
-- Major milestones achieved
-- Completed tasks and deliverables
-- Significant progress made
-
-## 🤝 Collaboration & Communication
-- Team interactions and meetings
-- Cross-functional work
-- Communication patterns
-
-## 📈 Productivity Insights
-- Time allocation analysis
-- Work patterns and trends
-- Efficiency observations
-
-## ⚠️ Areas of Attention
-- Potential blockers or delays
-- Items requiring follow-up
-- Areas needing support or resources
-
-## 🎯 Action Items & Recommendations
-- Next steps and priorities
-- Suggested improvements
-- Follow-up actions needed
-
-Keep the summary professional, actionable, and suitable for stakeholders. Use clear headings, bullet points, and concise language. Focus on insights that add value beyond just listing activities.`;
   }
 }
 
@@ -347,10 +287,10 @@ class GeminiProvider implements AiProvider {
     const model = this.configService.get<string>('GOOGLE_MODEL') || 'gemini-1.5-flash';
 
     if (!apiKey) {
-      throw new Error('GOOGLE_API_KEY is required');
+      throw ErrorUtils.createAuthError('GOOGLE_API_KEY is required', 'Google');
     }
 
-    const prompt = this.buildPrompt(activities, date);
+    const prompt = buildStandardPrompt(activities, date);
 
     try {
       const start = Date.now();
@@ -380,7 +320,7 @@ class GeminiProvider implements AiProvider {
       this.logger.verbose(`[TRACE] POST https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey} - status ${response.status} (${duration}ms)`);
 
       if (!response.ok) {
-        throw new Error(`Google Gemini API error: ${response.status} ${response.statusText}`);
+        throw ErrorUtils.createAiProviderError(`Google Gemini API error: ${response.status} ${response.statusText}`, 'Google', model);
       }
 
       const data = await response.json();
@@ -389,56 +329,6 @@ class GeminiProvider implements AiProvider {
       this.logger.error('Google Gemini API request failed:', error);
       throw error;
     }
-  }
-
-  private buildPrompt(activities: ActivityData[], date: string): string {
-    const activityText = activities.map(activity => {
-      const time = new Date(activity.timestamp).toLocaleTimeString();
-      const type = activity.type.toUpperCase();
-      const author = activity.author ? ` (by ${activity.author})` : '';
-      const description = activity.description && typeof activity.description === 'string'
-        ? ` - ${activity.description.substring(0, 300)}`
-        : '';
-      return `[${time}] ${type}: ${activity.title}${author}${description}`;
-    }).join('\n');
-
-    return `Create a comprehensive daily activity summary for ${date} based on the following activities:
-
-${activityText}
-
-Please provide a structured summary that includes:
-
-## 📊 Executive Summary
-- Total activities and key metrics
-- Most productive time periods
-- Primary focus areas
-
-## 🎯 Key Accomplishments
-- Major milestones achieved
-- Completed tasks and deliverables
-- Significant progress made
-
-## 🤝 Collaboration & Communication
-- Team interactions and meetings
-- Cross-functional work
-- Communication patterns
-
-## 📈 Productivity Insights
-- Time allocation analysis
-- Work patterns and trends
-- Efficiency observations
-
-## ⚠️ Areas of Attention
-- Potential blockers or delays
-- Items requiring follow-up
-- Areas needing support or resources
-
-## 🎯 Action Items & Recommendations
-- Next steps and priorities
-- Suggested improvements
-- Follow-up actions needed
-
-Keep the summary professional, actionable, and suitable for stakeholders. Use clear headings, bullet points, and concise language. Focus on insights that add value beyond just listing activities.`;
   }
 }
 
@@ -453,7 +343,7 @@ class OllamaProvider implements AiProvider {
     const baseUrl = this.configService.get<string>('OLLAMA_BASE_URL') || 'http://localhost:11434';
     const model = this.configService.get<string>('OLLAMA_MODEL') || 'llama2';
 
-    const prompt = this.buildPrompt(activities, date);
+    const prompt = buildStandardPrompt(activities, date);
 
     try {
       const start = Date.now();
@@ -477,7 +367,7 @@ class OllamaProvider implements AiProvider {
       this.logger.verbose(`[TRACE] POST ${baseUrl}/api/generate - status ${response.status} (${duration}ms)`);
 
       if (!response.ok) {
-        throw new Error(`Ollama API error: ${response.status} ${response.statusText}`);
+        throw ErrorUtils.createAiProviderError(`Ollama API error: ${response.status} ${response.statusText}`, 'Ollama', model);
       }
 
       const data = await response.json();
@@ -486,56 +376,6 @@ class OllamaProvider implements AiProvider {
       this.logger.error('Ollama API request failed:', error);
       throw error;
     }
-  }
-
-  private buildPrompt(activities: ActivityData[], date: string): string {
-    const activityText = activities.map(activity => {
-      const time = new Date(activity.timestamp).toLocaleTimeString();
-      const type = activity.type.toUpperCase();
-      const author = activity.author ? ` (by ${activity.author})` : '';
-      const description = activity.description && typeof activity.description === 'string'
-        ? ` - ${activity.description.substring(0, 300)}`
-        : '';
-      return `[${time}] ${type}: ${activity.title}${author}${description}`;
-    }).join('\n');
-
-    return `Create a comprehensive daily activity summary for ${date} based on the following activities:
-
-${activityText}
-
-Please provide a structured summary that includes:
-
-## 📊 Executive Summary
-- Total activities and key metrics
-- Most productive time periods
-- Primary focus areas
-
-## 🎯 Key Accomplishments
-- Major milestones achieved
-- Completed tasks and deliverables
-- Significant progress made
-
-## 🤝 Collaboration & Communication
-- Team interactions and meetings
-- Cross-functional work
-- Communication patterns
-
-## 📈 Productivity Insights
-- Time allocation analysis
-- Work patterns and trends
-- Efficiency observations
-
-## ⚠️ Areas of Attention
-- Potential blockers or delays
-- Items requiring follow-up
-- Areas needing support or resources
-
-## 🎯 Action Items & Recommendations
-- Next steps and priorities
-- Suggested improvements
-- Follow-up actions needed
-
-Keep the summary professional, actionable, and suitable for stakeholders. Use clear headings, bullet points, and concise language. Focus on insights that add value beyond just listing activities.`;
   }
 }
 
@@ -551,10 +391,10 @@ class HuggingFaceProvider implements AiProvider {
     const model = this.configService.get<string>('HUGGINGFACE_MODEL') || 'microsoft/DialoGPT-medium';
 
     if (!apiKey) {
-      throw new Error('HUGGINGFACE_API_KEY is required');
+      throw ErrorUtils.createAuthError('HUGGINGFACE_API_KEY is required', 'HuggingFace');
     }
 
-    const prompt = this.buildPrompt(activities, date);
+    const prompt = buildStandardPrompt(activities, date);
 
     try {
       const start = Date.now();
@@ -578,7 +418,7 @@ class HuggingFaceProvider implements AiProvider {
       this.logger.verbose(`[TRACE] POST https://api-inference.huggingface.co/models/${model} - status ${response.status} (${duration}ms)`);
 
       if (!response.ok) {
-        throw new Error(`Hugging Face API error: ${response.status} ${response.statusText}`);
+        throw ErrorUtils.createAiProviderError(`Hugging Face API error: ${response.status} ${response.statusText}`, 'HuggingFace', model);
       }
 
       const data = await response.json();
@@ -587,56 +427,6 @@ class HuggingFaceProvider implements AiProvider {
       this.logger.error('Hugging Face API request failed:', error);
       throw error;
     }
-  }
-
-  private buildPrompt(activities: ActivityData[], date: string): string {
-    const activityText = activities.map(activity => {
-      const time = new Date(activity.timestamp).toLocaleTimeString();
-      const type = activity.type.toUpperCase();
-      const author = activity.author ? ` (by ${activity.author})` : '';
-      const description = activity.description && typeof activity.description === 'string'
-        ? ` - ${activity.description.substring(0, 300)}`
-        : '';
-      return `[${time}] ${type}: ${activity.title}${author}${description}`;
-    }).join('\n');
-
-    return `Create a comprehensive daily activity summary for ${date} based on the following activities:
-
-${activityText}
-
-Please provide a structured summary that includes:
-
-## 📊 Executive Summary
-- Total activities and key metrics
-- Most productive time periods
-- Primary focus areas
-
-## 🎯 Key Accomplishments
-- Major milestones achieved
-- Completed tasks and deliverables
-- Significant progress made
-
-## 🤝 Collaboration & Communication
-- Team interactions and meetings
-- Cross-functional work
-- Communication patterns
-
-## 📈 Productivity Insights
-- Time allocation analysis
-- Work patterns and trends
-- Efficiency observations
-
-## ⚠️ Areas of Attention
-- Potential blockers or delays
-- Items requiring follow-up
-- Areas needing support or resources
-
-## 🎯 Action Items & Recommendations
-- Next steps and priorities
-- Suggested improvements
-- Follow-up actions needed
-
-Keep the summary professional, actionable, and suitable for stakeholders. Use clear headings, bullet points, and concise language. Focus on insights that add value beyond just listing activities.`;
   }
 }
 
@@ -652,7 +442,7 @@ class OpenWebUIProvider implements AiProvider {
     const model = this.configService.get<string>('OPENWEBUI_MODEL') || 'llama2';
     const apiKey = this.configService.get<string>('OPENWEBUI_API_KEY');
 
-    const prompt = this.buildPrompt(activities, date);
+    const prompt = buildStandardPrompt(activities, date);
     const systemPrompt = 'You are an expert productivity analyst who creates clear, professional daily activity summaries. Focus on extracting meaningful insights, identifying patterns, and highlighting key accomplishments. Structure your response in a scannable format with clear sections and actionable insights.';
 
     // Define different endpoint configurations to try
@@ -852,7 +642,7 @@ class OpenWebUIProvider implements AiProvider {
 
         if (!response.ok) {
           const errorText = await response.text().catch(() => 'Unknown error');
-          throw new Error(`${response.status} ${response.statusText} - ${errorText}`);
+          throw ErrorUtils.createAiProviderError(`${response.status} ${response.statusText} - ${errorText}`, 'OpenWebUI', model);
         }
 
         const data = await response.json();
@@ -875,7 +665,7 @@ class OpenWebUIProvider implements AiProvider {
           // String response
           content = data;
         } else {
-          throw new Error('Unexpected response format');
+          throw ErrorUtils.createAiProviderError('Unexpected response format', 'OpenWebUI', model);
         }
 
         this.logger.debug(`Successfully used OpenWebUI endpoint: ${config.name}`);
@@ -889,56 +679,8 @@ class OpenWebUIProvider implements AiProvider {
 
     // If all endpoints failed, throw the last error
     this.logger.error('All OpenWebUI endpoints failed');
-    throw new Error(`All OpenWebUI endpoints failed. Last error: ${lastError?.message}`);
+    throw ErrorUtils.createAiProviderError(`All OpenWebUI endpoints failed. Last error: ${lastError?.message}`, 'OpenWebUI', model);
   }
 
-  private buildPrompt(activities: ActivityData[], date: string): string {
-    const activityText = activities.map(activity => {
-      const time = new Date(activity.timestamp).toLocaleTimeString();
-      const type = activity.type.toUpperCase();
-      const author = activity.author ? ` (by ${activity.author})` : '';
-      const description = activity.description && typeof activity.description === 'string'
-        ? ` - ${activity.description.substring(0, 300)}`
-        : '';
-      return `[${time}] ${type}: ${activity.title}${author}${description}`;
-    }).join('\n');
 
-    return `Create a comprehensive daily activity summary for ${date} based on the following activities:
-
-${activityText}
-
-Please provide a structured summary that includes:
-
-## 📊 Executive Summary
-- Total activities and key metrics
-- Most productive time periods
-- Primary focus areas
-
-## 🎯 Key Accomplishments
-- Major milestones achieved
-- Completed tasks and deliverables
-- Significant progress made
-
-## 🤝 Collaboration & Communication
-- Team interactions and meetings
-- Cross-functional work
-- Communication patterns
-
-## 📈 Productivity Insights
-- Time allocation analysis
-- Work patterns and trends
-- Efficiency observations
-
-## ⚠️ Areas of Attention
-- Potential blockers or delays
-- Items requiring follow-up
-- Areas needing support or resources
-
-## 🎯 Action Items & Recommendations
-- Next steps and priorities
-- Suggested improvements
-- Follow-up actions needed
-
-Keep the summary professional, actionable, and suitable for stakeholders. Use clear headings, bullet points, and concise language. Focus on insights that add value beyond just listing activities.`;
-  }
 }

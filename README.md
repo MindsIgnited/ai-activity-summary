@@ -104,11 +104,57 @@ A NestJS data processing application that fetches activity data from multiple AP
 ## Features
 
 - **Multi-API Integration**: Fetch activities from GitLab, Slack, Microsoft Teams, and Jira
+- **Unified Service Architecture**: All services inherit from `BaseActivityService` for consistent patterns
+- **Standardized Activity Creation**: `ActivityFactory` ensures consistent activity data structure
 - **Configurable Integrations**: Enable/disable individual APIs via environment variables
 - **Flexible Date Ranges**: Generate summaries for today, week, month, or custom date ranges
 - **Comprehensive Logging**: Detailed logging for debugging and monitoring
 - **Error Handling**: Graceful error handling with fallback mechanisms
 - **TypeScript**: Full TypeScript support with strict typing
+
+## Architecture
+
+### Service Architecture
+
+The application uses a unified service architecture where all activity services inherit from `BaseActivityService`:
+
+```
+BaseActivityService (Abstract)
+├── GitLabService
+├── SlackService
+├── TeamsService
+└── JiraService
+```
+
+**Key Benefits:**
+- **Consistent Interface**: All services implement the same `fetchActivities()` method
+- **Shared Error Handling**: Common error handling and logging patterns
+- **Unified Configuration**: Standardized configuration checking across all services
+- **Reduced Duplication**: Common patterns shared in the base class
+
+### Activity Factory
+
+The `ActivityFactory` provides standardized methods for creating activity objects:
+
+```typescript
+// GitLab activities
+ActivityFactory.createCommitActivity(commit)
+ActivityFactory.createMergeRequestActivity(mr)
+ActivityFactory.createIssueActivity(issue)
+ActivityFactory.createCommentActivity(comment)
+
+// Teams activities
+ActivityFactory.createTeamsMessageActivity(message)
+ActivityFactory.createTeamsCalendarActivity(event)
+
+// Jira activities
+ActivityFactory.createJiraIssueActivity(issue, action)
+ActivityFactory.createJiraCommentActivity(issue, comment)
+ActivityFactory.createJiraWorklogActivity(issue, worklog)
+ActivityFactory.createJiraChangelogActivity(issue, changelog)
+```
+
+This ensures consistent activity data structure across all services and simplifies maintenance.
 
 ## Project Setup
 
@@ -244,21 +290,25 @@ $ pnpm run test:e2e
 - Commits, merge requests, issues, and comments
 - Configurable project IDs
 - Supports both GitLab.com and self-hosted instances
+- Uses `ActivityFactory` for standardized activity creation
 
 ### Slack
 - Channel messages and reactions
 - Configurable channels
 - Bot token authentication
+- Unified service pattern with `BaseActivityService`
 
 ### Microsoft Teams
 - Channel messages, calls, and calendar events
 - User-specific filtering by email
 - Microsoft Graph API integration
+- Standardized activity creation via `ActivityFactory`
 
 ### Jira
 - Issues, comments, and work logs
 - Configurable project keys and issue types
 - Basic authentication
+- Consistent error handling through base class
 
 ## AI Providers
 
@@ -391,6 +441,50 @@ The application generates JSON summaries with the following structure:
   }
 ]
 ```
+
+## Development Patterns
+
+### Adding New Services
+
+To add a new activity service:
+
+1. **Extend BaseActivityService**:
+```typescript
+@Injectable()
+export class NewService extends BaseActivityService {
+  protected readonly serviceName = 'NewService';
+  protected readonly logger = new Logger(NewService.name);
+
+  protected isConfigured(): boolean {
+    // Check configuration
+    return true;
+  }
+
+  protected async fetchActivitiesForDate(date: Date): Promise<ActivityData[]> {
+    // Implement service-specific logic
+    return [];
+  }
+}
+```
+
+2. **Add ActivityFactory Methods**:
+```typescript
+// In ActivityFactory
+static createNewServiceActivity(data: any): ActivityData {
+  return this.createActivity('newservice', id, timestamp, title, description, author, url, metadata);
+}
+```
+
+3. **Register in AppModule** and update `AppService` to include the new service.
+
+### Error Handling
+
+All services inherit common error handling patterns from `BaseActivityService`:
+
+- Automatic configuration validation
+- Standardized error logging
+- Graceful fallback mechanisms
+- Consistent error context
 
 ## Documentation
 

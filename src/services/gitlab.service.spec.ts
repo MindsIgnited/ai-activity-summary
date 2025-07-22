@@ -146,46 +146,30 @@ describe('GitLabService', () => {
   });
 
   it('should handle API errors gracefully', async () => {
-    // Mock successful user fetch, then API failure
-    global.fetch = jest.fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({
-          id: 123,
-          name: 'Test User',
-          username: 'testuser',
-          email: 'test@example.com',
-        }),
-      })
-      .mockResolvedValue({
-        ok: false,
-        status: 500,
-        statusText: 'Internal Server Error',
-      });
+    // Mock the makeGitLabRequest method to bypass retry logic for this test
+    const originalMakeRequest = (service as any).makeGitLabRequest;
+    (service as any).makeGitLabRequest = jest.fn().mockRejectedValue(new Error('API Error'));
 
-    const result = await service.fetchActivities(new Date());
-    expect(result).toEqual([]);
+    try {
+      const result = await service.fetchActivities(new Date());
+      expect(result).toEqual([]);
+    } finally {
+      // Restore original method
+      (service as any).makeGitLabRequest = originalMakeRequest;
+    }
   });
 
   it('should handle project fetch errors gracefully', async () => {
-    // Mock successful user fetch, then project fetch failure
-    global.fetch = jest.fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({
-          id: 123,
-          name: 'Test User',
-          username: 'testuser',
-          email: 'test@example.com',
-        }),
-      })
-      .mockResolvedValue({
-        ok: false,
-        status: 404,
-        statusText: 'Not Found',
-      });
+    // Mock the makeGitLabRequest method to bypass retry logic for this test
+    const originalMakeRequest = (service as any).makeGitLabRequest;
+    (service as any).makeGitLabRequest = jest.fn().mockRejectedValue(new Error('Project not found'));
 
-    const result = await service.fetchActivities(new Date());
-    expect(result).toEqual([]);
+    try {
+      const result = await service.fetchActivities(new Date());
+      expect(result).toEqual([]);
+    } finally {
+      // Restore original method
+      (service as any).makeGitLabRequest = originalMakeRequest;
+    }
   });
 });

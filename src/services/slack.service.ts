@@ -1,7 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { BaseActivityService } from './base-activity.service';
+import { ActivityFactory } from '../utils/activity.factory';
+import { DateRangeIterator } from '../utils/date.utils';
+import { setEndOfDay } from '../utils/string.utils';
 import { ActivityData } from '../app.service';
-import { setEndOfDay } from '../utils/date.utils';
+import { createTracedRequest } from '../utils/http.utils';
 
 interface SlackMessage {
   type: string;
@@ -33,22 +37,23 @@ interface SlackUser {
 }
 
 @Injectable()
-export class SlackService {
-  private readonly logger = new Logger(SlackService.name);
+export class SlackService extends BaseActivityService {
+  protected readonly serviceName = 'Slack';
+  protected readonly logger = new Logger(SlackService.name);
   private userCache: Record<string, SlackUser> = {};
 
-  constructor(private readonly configService: ConfigService) { }
+  constructor(private readonly configService: ConfigService) {
+    super();
+  }
 
-  async fetchActivities(date: Date): Promise<ActivityData[]> {
-    if (!this.isConfigured()) {
-      this.logger.warn('Slack configuration incomplete, skipping Slack activities');
-      return [];
-    }
+  protected isConfigured(): boolean {
+    const botToken = this.configService.get<string>('SLACK_BOT_TOKEN');
+    return !!botToken;
+  }
 
+  protected async fetchActivitiesForDate(date: Date): Promise<ActivityData[]> {
     const activities: ActivityData[] = [];
-    const startOfDay = new Date(date);
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = setEndOfDay(date);
+    const { startOfDay, endOfDay } = DateRangeIterator.getDayBounds(date);
     const oldest = (startOfDay.getTime() / 1000).toString();
     const latest = (endOfDay.getTime() / 1000).toString();
 
@@ -73,11 +78,6 @@ export class SlackService {
 
     this.logger.log(`Fetched ${activities.length} Slack activities for ${date.toISOString().split('T')[0]}`);
     return activities;
-  }
-
-  private isConfigured(): boolean {
-    const botToken = this.configService.get<string>('SLACK_BOT_TOKEN');
-    return !!botToken;
   }
 
   private getChannels(): string[] {
@@ -105,9 +105,7 @@ export class SlackService {
       const start = Date.now();
       this.logger.verbose(`[TRACE] GET ${url} - sending request`);
       try {
-        const response = await this.makeRequest(url.toString());
-        const duration = Date.now() - start;
-        this.logger.verbose(`[TRACE] GET ${url} - status ${response.status} (${duration}ms)`);
+        const response = await this.makeSlackRequest(url.toString());
         if (!response.ok) {
           this.logger.warn(`Slack API error: ${response.error}`);
           break;
@@ -119,8 +117,7 @@ export class SlackService {
         // Slack rate limit: 1 request per second for history
         if (hasMore) await new Promise(res => setTimeout(res, 1100));
       } catch (error) {
-        const duration = Date.now() - start;
-        this.logger.error(`[TRACE] GET ${url} - ERROR after ${duration}ms: ${error}`);
+        this.logger.error(`Failed to fetch Slack messages: ${error}`);
         throw error;
       }
     }
@@ -133,79 +130,77 @@ export class SlackService {
     const start = Date.now();
     this.logger.verbose(`[TRACE] GET ${url} - sending request`);
     try {
-      const response = await this.makeRequest(url);
-      const duration = Date.now() - start;
-      this.logger.verbose(`[TRACE] GET ${url} - status ${response.status} (${duration}ms)`);
+      const response = await this.makeSlackRequest(url);
       if (response.ok && response.user) {
         this.userCache[userId] = response.user;
         return response.user;
       }
     } catch (error) {
-      const duration = Date.now() - start;
-      this.logger.error(`[TRACE] GET ${url} - ERROR after ${duration}ms: ${error}`);
+      this.logger.error(`Failed to fetch Slack user: ${error}`);
       throw error;
     }
     return undefined;
   }
 
   private async createMessageActivity(msg: SlackMessage, channel: string): Promise<ActivityData> {
-    const user = msg.user ? await this.fetchUser(msg.user) : undefined;
-    return {
-      id: `slack-msg-${msg.ts}`,
-      type: 'slack',
-      timestamp: new Date(parseFloat(msg.ts) * 1000),
-      title: `Slack Message in #${channel}`,
-      description: msg.text,
-      author: user?.real_name || user?.name || msg.user || 'Unknown',
-      url: `https://slack.com/app_redirect?channel=${channel}&message_ts=${msg.ts}`,
-      metadata: {
+    const user = await this.fetchUser(msg.user || '');
+    const timestamp = new Date(parseInt(msg.ts) * 1000);
+    const title = `Message in #${channel}: ${msg.text.substring(0, 50)}`;
+
+    return ActivityFactory.createSlackActivity(
+      `slack-message-${msg.ts}`,
+      timestamp,
+      title,
+      msg.text,
+      user?.real_name || user?.name || 'Unknown User',
+      undefined, // No URL for Slack messages
+      {
+        action: 'message',
         channel,
+        userId: msg.user,
         threadTs: msg.thread_ts,
         parentUserId: msg.parent_user_id,
-        reactions: msg.reactions,
-        userId: msg.user,
-        userEmail: user?.profile?.email,
-      },
-    };
+        hasReactions: msg.reactions && msg.reactions.length > 0,
+        reactionCount: msg.reactions?.length || 0,
+      }
+    );
   }
 
   private async createReactionActivity(msg: SlackMessage, reaction: SlackReaction, channel: string): Promise<ActivityData> {
-    return {
-      id: `slack-reaction-${msg.ts}-${reaction.name}`,
-      type: 'slack',
-      timestamp: new Date(parseFloat(msg.ts) * 1000),
-      title: `Reaction :${reaction.name}: in #${channel}`,
-      description: `Reaction :${reaction.name}: by ${reaction.users.length} user(s)`,
-      author: 'Multiple',
-      url: `https://slack.com/app_redirect?channel=${channel}&message_ts=${msg.ts}`,
-      metadata: {
+    const user = await this.fetchUser(msg.user || '');
+    const timestamp = new Date(parseInt(msg.ts) * 1000);
+    const title = `Reaction ${reaction.name} in #${channel}`;
+
+    return ActivityFactory.createSlackActivity(
+      `slack-reaction-${msg.ts}-${reaction.name}`,
+      timestamp,
+      title,
+      `Reaction ${reaction.name} on message: ${msg.text.substring(0, 100)}`,
+      user?.real_name || user?.name || 'Unknown User',
+      undefined, // No URL for reactions
+      {
+        action: 'reaction',
         channel,
+        reactionName: reaction.name,
+        reactionCount: reaction.count,
         messageTs: msg.ts,
-        reaction: reaction.name,
-        count: reaction.count,
-        users: reaction.users,
-      },
-    };
+        userId: msg.user,
+      }
+    );
   }
 
-  private async makeRequest(url: string): Promise<any> {
-    const start = Date.now();
-    this.logger.verbose(`[TRACE] POST ${url} - sending request`);
-    try {
-      const response = await fetch(url, {
-        headers: {
-          'Authorization': `Bearer ${this.getBotToken()}`,
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Accept': 'application/json',
-        },
-      });
-      const duration = Date.now() - start;
-      this.logger.verbose(`[TRACE] POST ${url} - status ${response.status} (${duration}ms)`);
-      return response.json();
-    } catch (error) {
-      const duration = Date.now() - start;
-      this.logger.error(`[TRACE] POST ${url} - ERROR after ${duration}ms: ${error}`);
-      throw error;
-    }
+  private makeRequest = createTracedRequest('Slack', this.logger);
+
+  private async makeSlackRequest(url: string): Promise<any> {
+    return this.makeRequest(url, {
+      headers: {
+        'Authorization': `Bearer ${this.getBotToken()}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/json',
+      },
+      timeout: 15000, // 15 second timeout for Slack
+      retryConfig: 'aggressive', // Use aggressive retry for rate-limited Slack API
+      enableCircuitBreaker: true,
+    });
   }
 }

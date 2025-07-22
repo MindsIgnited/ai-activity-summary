@@ -7,6 +7,7 @@ import { GitLabService } from './services/gitlab.service';
 import { SlackService } from './services/slack.service';
 import { AiSummaryService } from './services/ai-summary.service';
 import { AiProviderService } from './services/ai-provider.service';
+import { ConfigurationService } from './config/api.config';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { AiProviderService } from './services/ai-provider.service';
     SlackService,
     AiProviderService,
     AiSummaryService,
+    ConfigurationService,
   ],
 })
 export class AppModule { }

@@ -1,10 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { BaseActivityService } from './base-activity.service';
+import { ActivityFactory } from '../utils/activity.factory';
+import { DateRangeIterator } from '../utils/date.utils';
+import { setEndOfDay } from '../utils/string.utils';
 import { ActivityData } from '../app.service';
 import pLimit from 'p-limit';
-import { setEndOfDay } from '../utils/date.utils';
 import { createTracedRequest } from '../utils/http.utils';
-import { safeSubstring } from '../utils/string.utils';
+import { safeSubstring, formatContentForDisplay } from '../utils/string.utils';
 
 interface GitLabCommit {
   id: string;
@@ -115,94 +118,22 @@ interface GitLabUser {
 }
 
 @Injectable()
-export class GitLabService {
-  private readonly logger = new Logger(GitLabService.name);
+export class GitLabService extends BaseActivityService {
+  protected readonly serviceName = 'GitLab';
+  protected readonly logger = new Logger(GitLabService.name);
   private currentUser: GitLabUser | null = null;
 
-  constructor(private readonly configService: ConfigService) { }
+  constructor(private readonly configService: ConfigService) {
+    super();
+  }
 
-  public isConfigured(): boolean {
+  protected isConfigured(): boolean {
     const baseUrl = this.configService.get<string>('GITLAB_BASE_URL');
     const accessToken = this.configService.get<string>('GITLAB_ACCESS_TOKEN');
     return !!(baseUrl && accessToken);
   }
 
-  public async getCurrentUser(): Promise<GitLabUser> {
-    const url = `${this.getBaseUrl()}/api/v4/user`;
-    return await this.makeGitLabRequest(url);
-  }
-
-  // For compatibility, add wrappers for fetchCommits, fetchMergeRequests, fetchIssues if needed
-  public async fetchCommits(startDate: Date, endDate: Date): Promise<GitLabCommit[]> {
-    // Use the new by-date-range method and flatten results
-    const map = await this.fetchCommitsByDateRange(startDate, endDate);
-    return Array.from(map.values()).flat().map(a => ({
-      id: a.metadata?.shortId || '',
-      short_id: a.metadata?.shortId || '',
-      title: a.title,
-      message: a.description || '',
-      author_name: a.author || '',
-      author_email: a.metadata?.authorEmail || '',
-      created_at: a.timestamp.toISOString(),
-      web_url: a.url || '',
-      project_id: a.metadata?.projectId || 0,
-      project_name: a.metadata?.projectName,
-    }));
-  }
-  public async fetchMergeRequests(startDate: Date, endDate: Date): Promise<GitLabMergeRequest[]> {
-    const map = await this.fetchMergeRequestsByDateRange(startDate, endDate);
-    return Array.from(map.values()).flat().map(a => ({
-      id: a.metadata?.iid || 0,
-      iid: a.metadata?.iid || 0,
-      title: a.title,
-      description: a.description || '',
-      state: a.metadata?.state || '',
-      created_at: a.timestamp.toISOString(),
-      updated_at: a.timestamp.toISOString(),
-      closed_at: undefined,
-      merged_at: undefined,
-      author: {
-        id: 0,
-        name: a.author || '',
-        username: '',
-        email: a.metadata?.authorEmail || '',
-      },
-      assignee: undefined,
-      web_url: a.url || '',
-      project_id: a.metadata?.projectId || 0,
-      project_name: a.metadata?.projectName,
-      source_branch: a.metadata?.sourceBranch || '',
-      target_branch: a.metadata?.targetBranch || '',
-      merge_status: a.metadata?.mergeStatus || '',
-    }));
-  }
-  public async fetchIssues(startDate: Date, endDate: Date): Promise<GitLabIssue[]> {
-    const map = await this.fetchIssuesByDateRange(startDate, endDate);
-    return Array.from(map.values()).flat().map(a => ({
-      id: a.metadata?.iid || 0,
-      iid: a.metadata?.iid || 0,
-      title: a.title,
-      description: a.description || '',
-      state: a.metadata?.state || '',
-      created_at: a.timestamp.toISOString(),
-      updated_at: a.timestamp.toISOString(),
-      closed_at: undefined,
-      author: {
-        id: 0,
-        name: a.author || '',
-        username: '',
-        email: a.metadata?.authorEmail || '',
-      },
-      assignee: undefined,
-      web_url: a.url || '',
-      project_id: a.metadata?.projectId || 0,
-      project_name: a.metadata?.projectName,
-      labels: a.metadata?.labels || [],
-      milestone: undefined,
-    }));
-  }
-
-  public async fetchActivities(date: Date): Promise<ActivityData[]> {
+  protected async fetchActivitiesForDate(date: Date): Promise<ActivityData[]> {
     if (!this.isConfigured()) {
       this.logger.warn('GitLab configuration incomplete, skipping GitLab activities');
       return [];
@@ -531,6 +462,80 @@ export class GitLabService {
     return comments;
   }
 
+  public async getCurrentUser(): Promise<GitLabUser> {
+    const url = `${this.getBaseUrl()}/api/v4/user`;
+    return await this.makeGitLabRequest(url);
+  }
+
+  public async fetchCommits(startDate: Date, endDate: Date): Promise<GitLabCommit[]> {
+    const projects = await this.getProjects();
+    const projectLimit = pLimit(this.getProjectConcurrency());
+    const allCommits: GitLabCommit[] = [];
+
+    await Promise.all(
+      projects.map(project =>
+        projectLimit(async () => {
+          try {
+            const url = `${this.getBaseUrl()}/api/v4/projects/${project.id}/repository/commits?since=${startDate.toISOString()}&until=${endDate.toISOString()}&per_page=100`;
+            const response = await this.makeGitLabRequest(url);
+            const projectCommits = response.map((commit: any) => ({ ...commit, project_name: project.name }));
+            allCommits.push(...projectCommits);
+          } catch (error) {
+            this.logger.warn(`Failed to fetch commits for project ${project.name}:`, error);
+          }
+        })
+      )
+    );
+
+    return allCommits;
+  }
+
+  public async fetchMergeRequests(startDate: Date, endDate: Date): Promise<GitLabMergeRequest[]> {
+    const projects = await this.getProjects();
+    const projectLimit = pLimit(this.getProjectConcurrency());
+    const allMRs: GitLabMergeRequest[] = [];
+
+    await Promise.all(
+      projects.map(project =>
+        projectLimit(async () => {
+          try {
+            const url = `${this.getBaseUrl()}/api/v4/projects/${project.id}/merge_requests?created_after=${startDate.toISOString()}&created_before=${endDate.toISOString()}&per_page=100&state=all`;
+            const response = await this.makeGitLabRequest(url);
+            const projectMRs = response.map((mr: any) => ({ ...mr, project_name: project.name }));
+            allMRs.push(...projectMRs);
+          } catch (error) {
+            this.logger.warn(`Failed to fetch merge requests for project ${project.name}:`, error);
+          }
+        })
+      )
+    );
+
+    return allMRs;
+  }
+
+  public async fetchIssues(startDate: Date, endDate: Date): Promise<GitLabIssue[]> {
+    const projects = await this.getProjects();
+    const projectLimit = pLimit(this.getProjectConcurrency());
+    const allIssues: GitLabIssue[] = [];
+
+    await Promise.all(
+      projects.map(project =>
+        projectLimit(async () => {
+          try {
+            const url = `${this.getBaseUrl()}/api/v4/projects/${project.id}/issues?created_after=${startDate.toISOString()}&created_before=${endDate.toISOString()}&per_page=100&state=all`;
+            const response = await this.makeGitLabRequest(url);
+            const projectIssues = response.map((issue: any) => ({ ...issue, project_name: project.name }));
+            allIssues.push(...projectIssues);
+          } catch (error) {
+            this.logger.warn(`Failed to fetch issues for project ${project.name}:`, error);
+          }
+        })
+      )
+    );
+
+    return allIssues;
+  }
+
   private async getProjects(): Promise<GitLabProject[]> {
     const projectIds = this.configService.get<string>('GITLAB_PROJECT_IDS')?.split(',') || [];
 
@@ -579,98 +584,25 @@ export class GitLabService {
         'Authorization': `Bearer ${accessToken}`,
         'Accept': 'application/json',
       },
+      timeout: 30000, // 30 second timeout
+      retryConfig: 'conservative', // Use conservative retry for GitLab API
+      enableCircuitBreaker: true,
     });
   }
 
   public createCommitActivity(commit: GitLabCommit): ActivityData {
-    return {
-      id: `gitlab-commit-${commit.id}`,
-      type: 'gitlab',
-      timestamp: new Date(commit.created_at),
-      title: `Commit: ${commit.title}`,
-      description: commit.message,
-      author: commit.author_name,
-      url: commit.web_url,
-      metadata: {
-        action: 'commit',
-        shortId: commit.short_id,
-        projectId: commit.project_id,
-        projectName: commit.project_name,
-        authorEmail: commit.author_email,
-      },
-    };
+    return ActivityFactory.createCommitActivity(commit);
   }
 
   public createMergeRequestActivity(mr: GitLabMergeRequest): ActivityData {
-    const action = mr.state === 'merged' ? 'merged' : mr.state === 'closed' ? 'closed' : 'created';
-
-    return {
-      id: `gitlab-mr-${mr.id}`,
-      type: 'gitlab',
-      timestamp: new Date(mr.created_at),
-      title: `Merge Request ${action}: ${mr.title}`,
-      description: mr.description,
-      author: mr.author.name,
-      url: mr.web_url,
-      metadata: {
-        action: 'merge_request',
-        state: mr.state,
-        mergeStatus: mr.merge_status,
-        projectId: mr.project_id,
-        projectName: mr.project_name,
-        sourceBranch: mr.source_branch,
-        targetBranch: mr.target_branch,
-        authorEmail: mr.author.email,
-        assigneeEmail: mr.assignee?.email,
-        iid: mr.iid,
-      },
-    };
+    return ActivityFactory.createMergeRequestActivity(mr);
   }
 
   public createIssueActivity(issue: GitLabIssue): ActivityData {
-    const action = issue.state === 'closed' ? 'closed' : 'created';
-
-    return {
-      id: `gitlab-issue-${issue.id}`,
-      type: 'gitlab',
-      timestamp: new Date(issue.created_at),
-      title: `Issue ${action}: ${issue.title}`,
-      description: issue.description,
-      author: issue.author.name,
-      url: issue.web_url,
-      metadata: {
-        action: 'issue',
-        state: issue.state,
-        projectId: issue.project_id,
-        projectName: issue.project_name,
-        labels: issue.labels,
-        authorEmail: issue.author.email,
-        assigneeEmail: issue.assignee?.email,
-        iid: issue.iid,
-        milestone: issue.milestone?.title,
-      },
-    };
+    return ActivityFactory.createIssueActivity(issue);
   }
 
   public createCommentActivity(comment: GitLabComment): ActivityData {
-    const noteableType = comment.noteable_type.toLowerCase();
-
-    return {
-      id: `gitlab-comment-${comment.id}`,
-      type: 'gitlab',
-      timestamp: new Date(comment.created_at),
-      title: `Comment on ${noteableType}: ${safeSubstring(comment.body, 0, 50)}${comment.body && typeof comment.body === 'string' && comment.body.length > 50 ? '...' : ''}`,
-      description: comment.body,
-      author: comment.author.name,
-      url: comment.web_url || '#',
-      metadata: {
-        action: 'comment',
-        noteableType: comment.noteable_type,
-        noteableId: comment.noteable_id,
-        projectId: comment.project_id,
-        projectName: comment.project_name,
-        authorEmail: comment.author.email,
-      },
-    };
+    return ActivityFactory.createCommentActivity(comment);
   }
 }

@@ -1,5 +1,46 @@
 # Activity Summary Setup Guide
 
+## Architecture Overview
+
+The application uses a unified service architecture where all activity services inherit from `BaseActivityService`. This provides:
+
+- **Consistent Interface**: All services implement the same `fetchActivities()` method
+- **Shared Error Handling**: Common error handling and logging patterns
+- **Unified Configuration**: Standardized configuration checking across all services
+- **Reduced Duplication**: Common patterns shared in the base class
+
+### Service Structure
+
+```
+BaseActivityService (Abstract)
+├── GitLabService
+├── SlackService
+├── TeamsService
+└── JiraService
+```
+
+### Activity Factory
+
+The `ActivityFactory` ensures consistent activity data structure across all services:
+
+```typescript
+// GitLab activities
+ActivityFactory.createCommitActivity(commit)
+ActivityFactory.createMergeRequestActivity(mr)
+ActivityFactory.createIssueActivity(issue)
+ActivityFactory.createCommentActivity(comment)
+
+// Teams activities
+ActivityFactory.createTeamsMessageActivity(message)
+ActivityFactory.createTeamsCalendarActivity(event)
+
+// Jira activities
+ActivityFactory.createJiraIssueActivity(issue, action)
+ActivityFactory.createJiraCommentActivity(issue, comment)
+ActivityFactory.createJiraWorklogActivity(issue, worklog)
+ActivityFactory.createJiraChangelogActivity(issue, changelog)
+```
+
 ## Environment Configuration
 
 The application supports multiple environment files with the following precedence (highest to lowest):
@@ -44,7 +85,7 @@ The application supports multiple environment files with the following precedenc
    TEAMS_CLIENT_ID=your_actual_teams_client_id
    TEAMS_CLIENT_SECRET=your_actual_teams_client_secret
    TEAMS_TENANT_ID=your_actual_teams_tenant_id
-   TEAMS_EMAIL=your-email@company.com
+   TEAMS_USER_EMAIL=your-email@company.com
    TEAMS_CHANNELS=General,Project Updates,Team Chat
 
    # Jira API Configuration
@@ -101,232 +142,143 @@ GITLAB_ENABLED=false
 SLACK_ENABLED=false
 TEAMS_ENABLED=true
 JIRA_ENABLED=true
-
-# Disable all integrations (useful for testing)
-GITLAB_ENABLED=false
-SLACK_ENABLED=false
-TEAMS_ENABLED=false
-JIRA_ENABLED=false
 ```
 
-**Behavior:**
-- **Default behavior**: All integrations are enabled by default
-- **Explicit disable**: Set `{INTEGRATION}_ENABLED=false` to disable
-- **Explicit enable**: Set `{INTEGRATION}_ENABLED=true` to enable
-- **Missing variable**: Treated as enabled (true)
-- **Invalid values**: Any value other than "false" is treated as enabled
+### Service-Specific Configuration
 
-**Benefits:**
-- **Performance**: Disable unused integrations to reduce API calls and processing time
-- **Troubleshooting**: Isolate issues by disabling specific integrations
-- **Flexibility**: Configure different setups for different environments
-- **Cost control**: Reduce API usage by only enabling needed integrations
+Each service inherits from `BaseActivityService` and implements its own configuration checking:
 
-### Security Notes:
+- **GitLabService**: Checks for `GITLAB_BASE_URL` and `GITLAB_ACCESS_TOKEN`
+- **SlackService**: Checks for `SLACK_BOT_TOKEN`
+- **TeamsService**: Checks for `TEAMS_CLIENT_ID`, `TEAMS_CLIENT_SECRET`, `TEAMS_TENANT_ID`, and `TEAMS_USER_EMAIL`
+- **JiraService**: Checks for `JIRA_BASE_URL`, `JIRA_EMAIL`, and `JIRA_API_TOKEN`
 
-- **`.env.local` is in `.gitignore`** and will never be committed to version control
-- **Never commit real API tokens or secrets** to version control
-- **Use `.env.local` for all sensitive configuration**
-- **Use `.env` for non-sensitive defaults** (optional)
-- **System environment variables** can override both files
+If any service is not properly configured, it will be automatically disabled and logged as a warning.
 
-### Environment File Precedence:
+## Development Patterns
 
-1. **`.env.local`** (highest priority) - Your local secrets
-2. **`.env`** (medium priority) - Default configuration
-3. **System environment variables** (lowest priority) - Runtime overrides
+### Adding New Services
 
-This ensures your secrets stay local while allowing for flexible configuration management.
+To add a new activity service:
+
+1. **Extend BaseActivityService**:
+```typescript
+@Injectable()
+export class NewService extends BaseActivityService {
+  protected readonly serviceName = 'NewService';
+  protected readonly logger = new Logger(NewService.name);
+
+  protected isConfigured(): boolean {
+    // Check configuration
+    return true;
+  }
+
+  protected async fetchActivitiesForDate(date: Date): Promise<ActivityData[]> {
+    // Implement service-specific logic
+    return [];
+  }
+}
+```
+
+2. **Add ActivityFactory Methods**:
+```typescript
+// In ActivityFactory
+static createNewServiceActivity(data: any): ActivityData {
+  return this.createActivity('newservice', id, timestamp, title, description, author, url, metadata);
+}
+```
+
+3. **Register in AppModule** and update `AppService` to include the new service.
+
+### Error Handling
+
+All services inherit common error handling patterns from `BaseActivityService`:
+
+- Automatic configuration validation
+- Standardized error logging
+- Graceful fallback mechanisms
+- Consistent error context
 
 ## API Setup Instructions
 
 ### GitLab API
-1. Go to your GitLab instance
-2. Navigate to User Settings > Access Tokens
-3. Create a new token with the following scopes:
-   - `read_api` - Read API access
-   - `read_repository` - Read repository access
-   - `read_user` - Read user information
-4. Add the token to `GITLAB_ACCESS_TOKEN` in `.env.local`
-5. Set your GitLab instance URL in `GITLAB_BASE_URL` (defaults to gitlab.com)
-6. Optionally specify project IDs in `GITLAB_PROJECT_IDS` (comma-separated)
-   - If not specified, will fetch from all projects you have access to
 
-**Important Notes for GitLab API:**
-- The token needs appropriate scopes to read project data
-- **User-Specific Data**: The application will only fetch activities created by the user whose access token is being used
-- Project IDs can be found in the project's main page URL
-- If no projects are specified, the app will fetch from all accessible projects
-- Supports both GitLab.com and self-hosted GitLab instances
-- **Privacy**: Only your own commits, merge requests, issues, and comments will be included in the summary
+1. **Create a Personal Access Token**:
+   - Go to GitLab → Settings → Access Tokens
+   - Create a token with `read_api` scope
+   - Copy the token to your `.env.local`
 
-**Performance**: GitLab project data is fetched in parallel with a concurrency limit (default: 5). You can control what data is fetched using several environment variables:
+2. **Configure Projects**:
+   - Set `GITLAB_PROJECT_IDS` to comma-separated project IDs
+   - Or leave empty to fetch all accessible projects
 
-- `GITLAB_FETCH_COMMITS` - Control commit fetching (default: true)
-- `GITLAB_FETCH_COMMENTS` - Control comment fetching (default: true)
-- `GITLAB_FETCH_ISSUES` - Control issue fetching (default: true)
-- `GITLAB_FETCH_MR_NOTES` - Control merge request note fetching (default: true)
-- `GITLAB_FETCH_NOTES` - **Blanket flag**: If false, disables ALL note/comment fetching (overrides other comment/note flags)
-- `GITLAB_FETCH_NESTED` - If false, disables all nested fetching (comments, notes, etc) regardless of other flags
-
-The `GITLAB_FETCH_NOTES` flag provides a simple way to disable all comment/note fetching at once, which is useful for performance tuning or when you only want top-level activities (commits, merge requests, issues). The concurrency limit can be set via the `GITLAB_PROJECT_CONCURRENCY` environment variable or adjusted in the code if you need to tune for your environment or API rate limits.
+3. **Optional Settings**:
+   - `GITLAB_PROJECT_CONCURRENCY`: Number of parallel project requests (default: 5)
+   - `GITLAB_FETCH_COMMITS`: Enable/disable commit fetching (default: true)
+   - `GITLAB_FETCH_ISSUES`: Enable/disable issue fetching (default: true)
+   - `GITLAB_FETCH_COMMENTS`: Enable/disable comment fetching (default: true)
 
 ### Slack API
-1. Go to https://api.slack.com/apps
-2. Create a new app
-3. Add the following OAuth scopes:
-   - `channels:history`
-   - `groups:history`
-   - `im:history`
-   - `mpim:history`
-4. Install the app to your workspace
-5. Copy the Bot User OAuth Token to `SLACK_BOT_TOKEN` in `.env.local`
-6. Optionally specify channels in `SLACK_CHANNELS` (comma-separated)
+
+1. **Create a Slack App**:
+   - Go to [api.slack.com/apps](https://api.slack.com/apps)
+   - Create a new app
+   - Add bot token scopes: `channels:history`, `users:read`, `reactions:read`
+
+2. **Install the App**:
+   - Install the app to your workspace
+   - Copy the bot token (`xoxb-...`) to your `.env.local`
+
+3. **Configure Channels**:
+   - Set `SLACK_CHANNELS` to comma-separated channel names
+   - The bot must be added to these channels
 
 ### Microsoft Teams API
 
-The Microsoft Teams integration uses **delegated permissions** to access user-specific data securely. This approach ensures that only the authenticated user's activities are fetched, providing better privacy and security.
+1. **Register Azure AD Application**:
+   - Go to Azure Portal → Azure Active Directory → App registrations
+   - Create a new registration
+   - Note the Application (client) ID and Directory (tenant) ID
 
-#### Setup Instructions
+2. **Configure API Permissions**:
+   - Add Microsoft Graph API permissions:
+     - `ChannelMessage.Read.All`
+     - `Chat.Read.All`
+     - `CallRecords.Read.All`
+     - `OnlineMeetings.Read.All`
+     - `Calendars.Read`
+     - `User.Read.All`
+     - `Team.ReadBasic.All`
+     - `Group.Read.All`
+   - Click "Grant admin consent"
 
-1. **Register an Application in Azure AD**
-   - Go to [Azure Portal > Azure Active Directory > App registrations](https://portal.azure.com/#blade/Microsoft_AAD_IAM/ActiveDirectoryMenuBlade/RegisteredApps)
-   - Click **New registration**
-   - Name your app (e.g., `Activity Summary`)
-   - Set the supported account type (usually "Accounts in this organizational directory only")
-   - Click **Register**
+3. **Create Client Secret**:
+   - Go to Certificates & secrets
+   - Create a new client secret
+   - Copy the secret value to your `.env.local`
 
-2. **Create a Client Secret**
-   - In your app registration, go to **Certificates & secrets**
-   - Click **New client secret**
-   - Add a description and set an expiry (choose as appropriate)
-   - Click **Add** and copy the value (you'll use this in `.env.local`)
-
-3. **Configure API Permissions**
-   - Go to **API permissions** > **Add a permission** > **Microsoft Graph** > **Delegated permissions**
-   - Add the following permissions:
-     - `Calendars.Read` (Read user calendars)
-     - `Channel.ReadBasic.All` (Read the names and descriptions of channels)
-     - `ChannelMessage.Read.All` (Read user channel messages)
-     - `Chat.Read` (Read user chat messages)
-     - `ChatMember.Read` (Read the members of chats)
-     - `ChatMessage.Read` (Read user chat messages)
-     - `Group.Read.All` (Read all groups)
-     - `Team.ReadBasic.All` (Read the names and descriptions of teams)
-     - `User.Read` (Sign in and read user profile)
-     - `User.Read.All` (Read all users full profiles)
-   - Click **Add permissions**
-
-4. **Grant Admin Consent**
-   - In **API permissions**, click **Grant admin consent for [Your Tenant]**
-   - Confirm the consent
-   - Ensure all permissions show "Granted for [Your Tenant]"
-
-5. **Configure Environment Variables**
-   - In `.env.local`, set:
-     - `TEAMS_CLIENT_ID` = Application (client) ID
-     - `TEAMS_CLIENT_SECRET` = Value from Certificates & secrets
-     - `TEAMS_TENANT_ID` = Directory (tenant) ID
-     - `TEAMS_EMAIL` = Your email address for authentication
-
-6. **Authentication Flow**
-   - The application uses device code flow for authentication
-   - When you run the app, it will display a URL and code
-   - Visit the URL, enter the code, and authenticate with your Microsoft account
-   - The app will automatically refresh tokens as needed
-
-#### Security and Privacy Benefits
-
-**Delegated Permissions:**
-- **User-Specific Access**: Only the authenticated user's data is accessible
-- **No Cross-User Data**: Cannot access other users' Teams activities
-- **Secure Authentication**: Uses OAuth 2.0 device code flow
-- **Automatic Token Refresh**: Handles token expiration automatically
-- **Privacy Compliant**: Follows least-privilege access principles
-
-**Data Filtering:**
-- Only your own messages, calls, and calendar events are included
-- No access to other team members' private data
-- Respects Teams privacy settings and permissions
-
-#### Troubleshooting
-
-**Common Issues:**
-- **403 Forbidden**: Ensure admin consent was granted and permissions are correct
-- **Authentication Failed**: Check that the user has access to Teams data
-- **Token Expired**: The app should automatically refresh tokens
-
-**For more details, see the [Microsoft Graph permissions reference](https://learn.microsoft.com/en-us/graph/permissions-reference)**
-
-7. **(Optional) Restrict to Specific Channels**
-   - Set `TEAMS_CHANNELS` to a comma-separated list of channel names
+4. **Configure Environment**:
+   - Set `TEAMS_CLIENT_ID` to your application ID
+   - Set `TEAMS_CLIENT_SECRET` to your client secret
+   - Set `TEAMS_TENANT_ID` to your tenant ID
+   - Set `TEAMS_USER_EMAIL` to your email address
 
 ### Jira API
-1. Go to https://id.atlassian.com/manage-profile/security/api-tokens
-2. Click "Create API token"
-3. Give it a label (e.g., "Activity Summary App")
-4. Copy the generated token to `JIRA_API_TOKEN` in `.env.local`
-5. Add your Jira email to `JIRA_EMAIL` in `.env.local`
-6. Set your Jira instance URL in `JIRA_BASE_URL` in `.env.local`
-7. Optionally specify project keys in `JIRA_PROJECT_KEYS` (comma-separated)
-8. Optionally specify issue types in `JIRA_ISSUE_TYPES` (comma-separated)
 
-## Usage
+1. **Create API Token**:
+   - Go to [id.atlassian.com/manage-profile/security/api-tokens](https://id.atlassian.com/manage-profile/security/api-tokens)
+   - Create a new API token
+   - Copy the token to your `.env.local`
 
-### Basic Usage
-```bash
-# Generate summary for a date range
-pnpm run generate --start-date 2024-01-01 --end-date 2024-01-31
+2. **Configure Projects**:
+   - Set `JIRA_PROJECT_KEYS` to comma-separated project keys
+   - Set `JIRA_ISSUE_TYPES` to comma-separated issue types
 
-# Generate summary for today
-pnpm run generate:today
+3. **Set Base URL**:
+   - For cloud: `https://your-domain.atlassian.net`
+   - For server: `https://your-jira-server.com`
 
-# Generate summary for the last week
-pnpm run generate:week
-
-# Generate summary for the last month
-pnpm run generate:month
-
-# Generate and save to file
-pnpm run generate --start-date 2024-01-01 --end-date 2024-01-31 --output ./summary.json
-
-# Using the new --period option (recommended)
-pnpm run generate --period today
-pnpm run generate --period week --output ./summary.json
-pnpm run generate --period month
-```
-
-### Command Line Options
-
-The application supports two ways to specify date ranges:
-
-#### Using `--period` (Recommended)
-```bash
-# Quick options for common time periods
-node dist/main --period today
-node dist/main --period week
-node dist/main --period month
-```
-
-#### Using `--start-date` and `--end-date`
-```bash
-# Custom date ranges
-node dist/main --start-date 2024-01-01 --end-date 2024-01-31
-```
-
-#### Output Options
-```bash
-# Save output to file
-node dist/main --period today --output ./summary.json
-```
-
-### Development
-```bash
-# Run in development mode
-pnpm run generate:dev --start-date 2024-01-01 --end-date 2024-01-31
-```
-
-### Performance
+## Performance
 
 GitLab project data is fetched in parallel with a concurrency limit (default: 5). This means that data for multiple projects is retrieved at the same time, making summary generation much faster for users with many projects. The concurrency limit can be set via the `GITLAB_PROJECT_CONCURRENCY` environment variable or adjusted in the code if you need to tune for your environment or API rate limits.
 
