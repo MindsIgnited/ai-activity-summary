@@ -106,6 +106,7 @@ A NestJS data processing application that fetches activity data from multiple AP
 - **Multi-API Integration**: Fetch activities from GitLab, Slack, Microsoft Teams, and Jira
 - **Unified Service Architecture**: All services inherit from `BaseActivityService` for consistent patterns
 - **Standardized Activity Creation**: `ActivityFactory` ensures consistent activity data structure
+- **User-Specific Filtering**: Only fetches activities from the designated user for privacy and accuracy
 - **Configurable Integrations**: Enable/disable individual APIs via environment variables
 - **Flexible Date Ranges**: Generate summaries for today, week, month, or custom date ranges
 - **Comprehensive Logging**: Detailed logging for debugging and monitoring
@@ -155,6 +156,52 @@ ActivityFactory.createJiraChangelogActivity(issue, changelog)
 ```
 
 This ensures consistent activity data structure across all services and simplifies maintenance.
+
+## User Filtering & Privacy
+
+The application implements comprehensive user filtering to ensure only activities from the designated user are processed:
+
+### User-Specific Data Fetching
+
+All services filter activities by the current user to maintain privacy and accuracy:
+
+- **GitLab**: Uses API-level filtering with `author_id`/`author_username` parameters and post-fetch filtering by email
+- **Slack**: Post-fetch filtering by user email (requires `SLACK_USER_EMAIL` configuration)
+- **Teams**: Post-fetch filtering by user email for messages, user-specific calendar events
+- **Jira**: Uses JQL with user email filtering for issues, post-fetch filtering for comments/worklogs/changelog
+
+### Configuration Requirements
+
+To enable user filtering, configure the following environment variables:
+
+```bash
+# GitLab (uses token user automatically)
+GITLAB_ACCESS_TOKEN=your_token
+
+# Slack (NEW - for user filtering)
+SLACK_BOT_TOKEN=your_token
+SLACK_USER_EMAIL=user@example.com
+
+# Teams (already configured)
+TEAMS_USER_EMAIL=user@example.com
+
+# Jira (already configured)
+JIRA_EMAIL=user@example.com
+```
+
+### Fallback Behavior
+
+If user email is not configured for a service:
+- The service will fetch all activities (with warning logs)
+- This maintains backward compatibility
+- Recommended to configure user emails for privacy
+
+### Benefits
+
+- **Privacy**: Only processes user's own activities
+- **Performance**: Reduces data transfer and processing
+- **Accuracy**: Ensures summaries contain only relevant activities
+- **Compliance**: Respects data privacy requirements
 
 ## Project Setup
 
@@ -291,24 +338,28 @@ $ pnpm run test:e2e
 - Configurable project IDs
 - Supports both GitLab.com and self-hosted instances
 - Uses `ActivityFactory` for standardized activity creation
+- **User Filtering**: API-level filtering with `author_id`/`author_username` parameters
 
 ### Slack
 - Channel messages and reactions
 - Configurable channels
 - Bot token authentication
 - Unified service pattern with `BaseActivityService`
+- **User Filtering**: Post-fetch filtering by user email (requires `SLACK_USER_EMAIL`)
 
 ### Microsoft Teams
 - Channel messages, calls, and calendar events
 - User-specific filtering by email
 - Microsoft Graph API integration
 - Standardized activity creation via `ActivityFactory`
+- **User Filtering**: Post-fetch filtering for messages, user-specific calendar events
 
 ### Jira
 - Issues, comments, and work logs
 - Configurable project keys and issue types
 - Basic authentication
 - Consistent error handling through base class
+- **User Filtering**: JQL-level filtering for issues, post-fetch filtering for comments/worklogs/changelog
 
 ## AI Providers
 

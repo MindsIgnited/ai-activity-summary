@@ -161,15 +161,25 @@ export class JiraService extends BaseActivityService {
     endDate = setEndOfDay(endDate);
     const baseUrl = this.configService.get<string>('JIRA_BASE_URL');
     const url = `${baseUrl}/rest/api/3/issue/${issueKey}/comment`;
+    const userEmail = this.configService.get<string>('JIRA_EMAIL');
 
     try {
       const response = await this.makeJiraRequest(url);
       const comments = response.comments || [];
 
-      return comments.filter(comment => {
+      const filteredComments = comments.filter(comment => {
         const commentDate = new Date(comment.created);
-        return commentDate >= startDate && commentDate <= endDate;
+        const dateInRange = commentDate >= startDate && commentDate <= endDate;
+
+        // Filter by user if email is configured
+        if (userEmail) {
+          return dateInRange && comment.author?.emailAddress === userEmail;
+        }
+
+        return dateInRange;
       });
+
+      return filteredComments;
     } catch (error) {
       this.logger.warn(`Failed to fetch comments for issue ${issueKey}:`, error);
       return [];
@@ -180,15 +190,25 @@ export class JiraService extends BaseActivityService {
     endDate = setEndOfDay(endDate);
     const baseUrl = this.configService.get<string>('JIRA_BASE_URL');
     const url = `${baseUrl}/rest/api/3/issue/${issueKey}/worklog`;
+    const userEmail = this.configService.get<string>('JIRA_EMAIL');
 
     try {
       const response = await this.makeJiraRequest(url);
       const worklogs = response.worklogs || [];
 
-      return worklogs.filter(worklog => {
+      const filteredWorklogs = worklogs.filter(worklog => {
         const worklogDate = new Date(worklog.started);
-        return worklogDate >= startDate && worklogDate <= endDate;
+        const dateInRange = worklogDate >= startDate && worklogDate <= endDate;
+
+        // Filter by user if email is configured
+        if (userEmail) {
+          return dateInRange && worklog.author?.emailAddress === userEmail;
+        }
+
+        return dateInRange;
       });
+
+      return filteredWorklogs;
     } catch (error) {
       this.logger.warn(`Failed to fetch worklogs for issue ${issueKey}:`, error);
       return [];
@@ -199,15 +219,25 @@ export class JiraService extends BaseActivityService {
     endDate = setEndOfDay(endDate);
     const baseUrl = this.configService.get<string>('JIRA_BASE_URL');
     const url = `${baseUrl}/rest/api/3/issue/${issueKey}?expand=changelog`;
+    const userEmail = this.configService.get<string>('JIRA_EMAIL');
 
     try {
       const response = await this.makeJiraRequest(url);
       const changelog = response.changelog?.histories || [];
 
-      return changelog.filter(history => {
+      const filteredChangelog = changelog.filter(history => {
         const historyDate = new Date(history.created);
-        return historyDate >= startDate && historyDate <= endDate;
+        const dateInRange = historyDate >= startDate && historyDate <= endDate;
+
+        // Filter by user if email is configured
+        if (userEmail) {
+          return dateInRange && history.author?.emailAddress === userEmail;
+        }
+
+        return dateInRange;
       });
+
+      return filteredChangelog;
     } catch (error) {
       this.logger.warn(`Failed to fetch changelog for issue ${issueKey}:`, error);
       return [];
@@ -312,12 +342,5 @@ export class JiraService extends BaseActivityService {
 
   private getBaseUrl(): string {
     return this.configService.get<string>('JIRA_BASE_URL')!;
-  }
-
-  private isUserInvolved(issue: JiraIssue, userEmail: string): boolean {
-    return (
-      issue.fields.assignee?.emailAddress === userEmail ||
-      issue.fields.reporter?.emailAddress === userEmail
-    );
   }
 }

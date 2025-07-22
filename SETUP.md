@@ -41,6 +41,52 @@ ActivityFactory.createJiraWorklogActivity(issue, worklog)
 ActivityFactory.createJiraChangelogActivity(issue, changelog)
 ```
 
+## User Filtering & Privacy
+
+The application implements comprehensive user filtering to ensure only activities from the designated user are processed for privacy and accuracy.
+
+### User-Specific Data Fetching
+
+All services filter activities by the current user:
+
+- **GitLab**: Uses API-level filtering with `author_id`/`author_username` parameters and post-fetch filtering by email
+- **Slack**: Post-fetch filtering by user email (requires `SLACK_USER_EMAIL` configuration)
+- **Teams**: Post-fetch filtering by user email for messages, user-specific calendar events
+- **Jira**: Uses JQL with user email filtering for issues, post-fetch filtering for comments/worklogs/changelog
+
+### Required User Configuration
+
+To enable user filtering, configure these environment variables:
+
+```bash
+# GitLab (uses token user automatically - no additional config needed)
+GITLAB_ACCESS_TOKEN=your_token
+
+# Slack (NEW - required for user filtering)
+SLACK_BOT_TOKEN=your_token
+SLACK_USER_EMAIL=user@example.com
+
+# Teams (already configured)
+TEAMS_USER_EMAIL=user@example.com
+
+# Jira (already configured)
+JIRA_EMAIL=user@example.com
+```
+
+### Fallback Behavior
+
+If user email is not configured for a service:
+- The service will fetch all activities (with warning logs)
+- This maintains backward compatibility
+- **Recommended**: Configure user emails for privacy
+
+### Privacy Benefits
+
+- **Data Minimization**: Only processes user's own activities
+- **Performance**: Reduces data transfer and processing overhead
+- **Accuracy**: Ensures summaries contain only relevant activities
+- **Compliance**: Respects data privacy requirements and regulations
+
 ## Environment Configuration
 
 The application supports multiple environment files with the following precedence (highest to lowest):
@@ -79,6 +125,8 @@ The application supports multiple environment files with the following precedenc
    SLACK_BOT_TOKEN=xoxb-your_actual_slack_token
    SLACK_APP_TOKEN=xapp-your_actual_slack_token
    SLACK_CHANNELS=general,random,project-updates
+   # NEW: Required for user filtering - only fetch messages from this user
+   SLACK_USER_EMAIL=your-email@company.com
 
    # Microsoft Teams API Configuration
    TEAMS_ENABLED=true
@@ -233,6 +281,11 @@ All services inherit common error handling patterns from `BaseActivityService`:
    - Set `SLACK_CHANNELS` to comma-separated channel names
    - The bot must be added to these channels
 
+4. **Configure User Filtering** (NEW):
+   - Set `SLACK_USER_EMAIL` to your email address
+   - This ensures only your messages are fetched for privacy
+   - If not configured, all messages will be fetched (with warning logs)
+
 ### Microsoft Teams API
 
 1. **Register Azure AD Application**:
@@ -328,7 +381,7 @@ The GitLab integration tracks the following activities for the authenticated use
 - Direct links to commit details in GitLab
 - Project and branch information
 - Commit timestamps and short IDs
-- **User-Specific**: Only your own commits are included
+- **User-Specific**: Only your own commits are included (filtered by author email/name)
 
 ### Merge Requests
 - Created, merged, and closed merge requests
@@ -336,7 +389,7 @@ The GitLab integration tracks the following activities for the authenticated use
 - Source and target branch details
 - Author and assignee information
 - Direct links to merge requests
-- **User-Specific**: Only merge requests you created are included
+- **User-Specific**: Only merge requests you created are included (API-level filtering)
 
 ### Issues
 - Created and closed issues
@@ -344,14 +397,14 @@ The GitLab integration tracks the following activities for the authenticated use
 - Milestone information when available
 - Author and assignee details
 - Direct links to issues
-- **User-Specific**: Only issues you created are included
+- **User-Specific**: Only issues you created are included (API-level filtering)
 
 ### Comments
 - Comments on commits, merge requests, and issues
 - Comment content and author information
 - Direct links to specific comments
 - Project context for each comment
-- **User-Specific**: Only comments you authored are included
+- **User-Specific**: Only comments you authored are included (post-fetch filtering)
 
 ## Teams Activity Types
 
@@ -361,7 +414,7 @@ The Teams integration tracks the following activities for the authenticated user
 - Channel messages sent by the authenticated user
 - Message content, author, and timestamps
 - Direct links to messages in Teams
-- **User-Specific**: Only your own messages are included
+- **User-Specific**: Only your own messages are included (post-fetch filtering by email)
 
 ### Calls
 - Teams call records where the user was organizer or participant
@@ -371,7 +424,5 @@ The Teams integration tracks the following activities for the authenticated user
 
 ### Calendar Events
 - Calendar events from the authenticated user's calendar
-- Event details, attendees, and duration
-- Online meeting information when available
-- Direct links to calendar events
-- **User-Specific**: Only your own calendar events are included
+- Event details, attendees, and meeting links
+- **User-Specific**: Only your calendar events are included (user-specific API calls)

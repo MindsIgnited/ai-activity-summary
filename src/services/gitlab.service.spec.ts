@@ -1,6 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { GitLabService } from './gitlab.service';
+import { ActivityData } from '../app.service';
+import { ActivityFactory } from '../utils/activity.factory';
 
 describe('GitLabService', () => {
   let service: GitLabService;
@@ -171,5 +173,67 @@ describe('GitLabService', () => {
       // Restore original method
       (service as any).makeGitLabRequest = originalMakeRequest;
     }
+  });
+
+  describe('caching optimization', () => {
+    it('should use cached data for subsequent calls within the same date range', async () => {
+      // Mock the date range methods to track calls
+      const mockCommitsMap = new Map<string, ActivityData[]>();
+      mockCommitsMap.set('2024-01-01', [
+        ActivityFactory.createCommitActivity({
+          id: '123',
+          short_id: 'abc123',
+          title: 'Test commit',
+          message: 'Test commit message',
+          author_name: 'Test User',
+          author_email: 'test@example.com',
+          created_at: '2024-01-01T10:00:00Z',
+          web_url: 'https://gitlab.com/test',
+          project_id: 1,
+          project_name: 'Test Project'
+        })
+      ]);
+
+      const mockMergeRequestsMap = new Map<string, ActivityData[]>();
+      const mockIssuesMap = new Map<string, ActivityData[]>();
+
+      jest.spyOn(service, 'fetchCommitsByDateRange').mockResolvedValue(mockCommitsMap);
+      jest.spyOn(service, 'fetchMergeRequestsByDateRange').mockResolvedValue(mockMergeRequestsMap);
+      jest.spyOn(service, 'fetchIssuesByDateRange').mockResolvedValue(mockIssuesMap);
+      jest.spyOn(service, 'getCurrentUser').mockResolvedValue({
+        id: 1,
+        name: 'Test User',
+        username: 'testuser',
+        email: 'test@example.com'
+      });
+
+      const date = new Date('2024-01-01');
+
+      // First call - should initialize cache
+      const activities1 = await service.fetchActivities(date);
+
+      // Second call - should use cached data
+      const activities2 = await service.fetchActivities(date);
+
+      // Verify both calls return the same data
+      expect(activities1).toEqual(activities2);
+      expect(activities1).toHaveLength(1);
+      expect(activities1[0].type).toBe('gitlab');
+
+      // Verify date range methods were only called once (for cache initialization)
+      expect(service.fetchCommitsByDateRange).toHaveBeenCalledTimes(1);
+      expect(service.fetchMergeRequestsByDateRange).toHaveBeenCalledTimes(1);
+      expect(service.fetchIssuesByDateRange).toHaveBeenCalledTimes(1);
+
+      // Clear cache and verify it works again
+      service.clearCache();
+
+      const activities3 = await service.fetchActivities(date);
+
+      // Should call date range methods again after cache clear
+      expect(service.fetchCommitsByDateRange).toHaveBeenCalledTimes(2);
+      expect(service.fetchMergeRequestsByDateRange).toHaveBeenCalledTimes(2);
+      expect(service.fetchIssuesByDateRange).toHaveBeenCalledTimes(2);
+    });
   });
 });

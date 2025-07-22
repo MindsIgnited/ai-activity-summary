@@ -3,7 +3,6 @@ import { ConfigService } from '@nestjs/config';
 import { BaseActivityService } from './base-activity.service';
 import { ActivityFactory } from '../utils/activity.factory';
 import { DateRangeIterator } from '../utils/date.utils';
-import { setEndOfDay } from '../utils/string.utils';
 import { ActivityData } from '../app.service';
 import { createTracedRequest } from '../utils/http.utils';
 
@@ -58,11 +57,26 @@ export class SlackService extends BaseActivityService {
     const latest = (endOfDay.getTime() / 1000).toString();
 
     const channels = this.getChannels();
+    const userEmail = this.configService.get<string>('SLACK_USER_EMAIL');
+
+    if (!userEmail) {
+      this.logger.warn('SLACK_USER_EMAIL not configured, fetching all messages (no user filtering)');
+    }
+
     for (const channel of channels) {
       try {
         // Fetch messages for the channel
         const messages = await this.fetchChannelMessages(channel, oldest, latest);
-        for (const msg of messages) {
+
+        // Filter messages by current user if email is configured
+        const userMessages = userEmail
+          ? messages.filter(msg => {
+            const user = this.userCache[msg.user || ''];
+            return user?.profile?.email === userEmail;
+          })
+          : messages;
+
+        for (const msg of userMessages) {
           activities.push(await this.createMessageActivity(msg, channel));
           // Add reactions as separate activities
           if (msg.reactions) {

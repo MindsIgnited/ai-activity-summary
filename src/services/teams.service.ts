@@ -3,7 +3,6 @@ import { ConfigService } from '@nestjs/config';
 import { BaseActivityService } from './base-activity.service';
 import { ActivityFactory } from '../utils/activity.factory';
 import { DateRangeIterator } from '../utils/date.utils';
-import { setEndOfDay } from '../utils/string.utils';
 import { ActivityData } from '../app.service';
 import { createTracedRequest } from '../utils/http.utils';
 import { ErrorUtils } from '../utils/error.utils';

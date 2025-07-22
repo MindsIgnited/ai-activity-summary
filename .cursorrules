@@ -79,6 +79,36 @@ ActivityFactory.createJiraWorklogActivity(issue, worklog)
 ActivityFactory.createJiraChangelogActivity(issue, changelog)
 ```
 
+### User Filtering & Privacy
+All services implement comprehensive user filtering to ensure only activities from the designated user are processed:
+
+- **GitLab**: API-level filtering with `author_id`/`author_username` parameters + post-fetch filtering by email
+- **Slack**: Post-fetch filtering by user email (requires `SLACK_USER_EMAIL` configuration)
+- **Teams**: Post-fetch filtering by user email for messages, user-specific calendar events
+- **Jira**: JQL-level filtering for issues, post-fetch filtering for comments/worklogs/changelog
+
+**Configuration Requirements:**
+```bash
+# GitLab (uses token user automatically)
+GITLAB_ACCESS_TOKEN=your_token
+
+# Slack (NEW - required for user filtering)
+SLACK_BOT_TOKEN=your_token
+SLACK_USER_EMAIL=user@example.com
+
+# Teams (already configured)
+TEAMS_USER_EMAIL=user@example.com
+
+# Jira (already configured)
+JIRA_EMAIL=user@example.com
+```
+
+**Benefits:**
+- **Privacy**: Only processes user's own activities
+- **Performance**: Reduces data transfer and processing
+- **Accuracy**: Ensures summaries contain only relevant activities
+- **Compliance**: Respects data privacy requirements
+
 ## Development Guidelines
 
 ### Code Style & Architecture
@@ -173,7 +203,7 @@ export class GitLabService extends BaseActivityService {
 // Create activities using factory methods
 const activity = ActivityFactory.createCommitActivity(commit);
 const activity = ActivityFactory.createTeamsMessageActivity(message);
-const activity = ActivityFactory.createJiraIssueActivity(issue, 'created');
+const activity = ActivityFactory.createJiraIssueActivity(issue, action);
 ```
 
 ### Configuration Pattern
@@ -234,6 +264,7 @@ export interface ActivityData {
 - Handle pagination properly
 - Use appropriate scopes for access tokens
 - **NEW**: Use `ActivityFactory` for all activity creation
+- **User Filtering**: API-level filtering with `author_id`/`author_username` parameters
 
 ### Slack API
 - Fetch channel messages and reactions
@@ -241,6 +272,7 @@ export interface ActivityData {
 - Handle rate limits and cursor-based pagination
 - Use bot tokens with appropriate scopes
 - **NEW**: Extend `BaseActivityService` for unified patterns
+- **User Filtering**: Post-fetch filtering by user email (requires `SLACK_USER_EMAIL`)
 
 ### Microsoft Teams API
 - Fetch channel messages and chat messages
@@ -248,6 +280,7 @@ export interface ActivityData {
 - Handle OAuth2 authentication flow
 - Use Microsoft Graph API endpoints
 - **NEW**: Use `ActivityFactory` for standardized activity creation
+- **User Filtering**: Post-fetch filtering for messages, user-specific calendar events
 
 ### Jira API
 - Fetch issues, comments, and work logs
@@ -256,6 +289,7 @@ export interface ActivityData {
 - Use Basic Authentication with email and API token
 - Filter by date ranges and project keys
 - **NEW**: Extend `BaseActivityService` for consistent error handling
+- **User Filtering**: JQL-level filtering for issues, post-fetch filtering for comments/worklogs/changelog
 
 ## Adding New Services
 
