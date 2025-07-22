@@ -157,6 +157,26 @@ ActivityFactory.createJiraChangelogActivity(issue, changelog)
 
 This ensures consistent activity data structure across all services and simplifies maintenance.
 
+### Preload Optimization
+
+The application supports preloading data for date ranges to optimize performance:
+
+```typescript
+// Services can override preloadForDateRange for optimization
+protected async preloadForDateRange(startDate: Date, endDate: Date): Promise<void> {
+  // Service-specific preload logic
+}
+
+// Public preload method for external use
+await service.preload(startDate, endDate);
+```
+
+**Benefits:**
+- **Performance**: Services can fetch data for entire date ranges upfront
+- **Caching**: Subsequent day-by-day requests can use preloaded data
+- **Flexibility**: Each service can implement its own optimization strategy
+- **Backward Compatibility**: Services without preload work normally
+
 ## User Filtering & Privacy
 
 The application implements comprehensive user filtering to ensure only activities from the designated user are processed:
@@ -339,6 +359,7 @@ $ pnpm run test:e2e
 - Supports both GitLab.com and self-hosted instances
 - Uses `ActivityFactory` for standardized activity creation
 - **User Filtering**: API-level filtering with `author_id`/`author_username` parameters
+- **Performance Optimization**: Preloads data for entire date ranges with caching
 
 ### Slack
 - Channel messages and reactions
@@ -514,6 +535,12 @@ export class NewService extends BaseActivityService {
   protected async fetchActivitiesForDate(date: Date): Promise<ActivityData[]> {
     // Implement service-specific logic
     return [];
+  }
+
+  // Optional: Override for performance optimization
+  protected async preloadForDateRange(startDate: Date, endDate: Date): Promise<void> {
+    // Preload data for the entire date range
+    // This is called before day-by-day iteration begins
   }
 }
 ```

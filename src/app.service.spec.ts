@@ -17,18 +17,22 @@ describe('AppService', () => {
 
   const mockJiraService = {
     fetchActivities: jest.fn(),
+    preload: jest.fn(),
   };
 
   const mockTeamsService = {
     fetchActivities: jest.fn(),
+    preload: jest.fn(),
   };
 
   const mockGitlabService = {
     fetchActivities: jest.fn(),
+    preload: jest.fn(),
   };
 
   const mockSlackService = {
     fetchActivities: jest.fn(),
+    preload: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -39,18 +43,21 @@ describe('AppService', () => {
           provide: JiraService,
           useValue: {
             fetchActivities: jest.fn(),
+            preload: jest.fn(),
           },
         },
         {
           provide: TeamsService,
           useValue: {
             fetchActivities: jest.fn(),
+            preload: jest.fn(),
           },
         },
         {
           provide: GitLabService,
           useValue: {
             fetchActivities: jest.fn(),
+            preload: jest.fn(),
             fetchCommitsByDateRange: jest.fn(),
             fetchMergeRequestsByDateRange: jest.fn(),
             fetchIssuesByDateRange: jest.fn(),
@@ -62,6 +69,7 @@ describe('AppService', () => {
           provide: SlackService,
           useValue: {
             fetchActivities: jest.fn(),
+            preload: jest.fn(),
           },
         },
         {

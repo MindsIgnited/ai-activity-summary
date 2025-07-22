@@ -213,21 +213,30 @@ export class GitLabService extends BaseActivityService {
   }
 
   protected async fetchActivitiesForDate(date: Date): Promise<ActivityData[]> {
-    if (!this.isConfigured()) {
-      this.logger.warn('GitLab configuration incomplete, skipping GitLab activities');
-      return [];
-    }
+    const activities: ActivityData[] = [];
 
-    const dateStr = date.toISOString().split('T')[0];
+    // Get the date range for the current iteration
+    const startDate = new Date(date);
+    startDate.setHours(0, 0, 0, 0);
+    const endDate = new Date(date);
+    endDate.setHours(23, 59, 59, 999);
 
-    // Ensure cache is initialized for this date
-    await this.ensureCacheInitialized(date, date);
+    // Initialize cache for this date range
+    await this.ensureCacheInitialized(startDate, endDate);
 
     // Return cached activities for this date
-    const activities = this.cachedActivities.get(dateStr) || [];
-    this.logger.debug(`Retrieved ${activities.length} cached GitLab activities for ${dateStr}`);
+    const dateStr = date.toISOString().split('T')[0];
+    const cachedActivities = this.cachedActivities.get(dateStr) || [];
 
-    return activities;
+    return cachedActivities;
+  }
+
+  /**
+   * Override preloadForDateRange to initialize cache for the entire date range
+   */
+  protected async preloadForDateRange(startDate: Date, endDate: Date): Promise<void> {
+    this.logger.log(`Preloading GitLab data for range: ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`);
+    await this.ensureCacheInitialized(startDate, endDate);
   }
 
   /**

@@ -41,6 +41,24 @@ ActivityFactory.createJiraWorklogActivity(issue, worklog)
 ActivityFactory.createJiraChangelogActivity(issue, changelog)
 ```
 
+### Performance Optimization
+
+The application supports preloading data for date ranges to optimize performance:
+
+- **Preload Phase**: Services can initialize data for entire date ranges before day-by-day iteration
+- **Caching**: Services can cache preloaded data for subsequent requests
+- **Flexibility**: Each service can implement its own optimization strategy
+- **Backward Compatibility**: Services without preload implementation work normally
+
+**Example Implementation:**
+```typescript
+// Override preloadForDateRange for optimization
+protected async preloadForDateRange(startDate: Date, endDate: Date): Promise<void> {
+  // Service-specific preload logic
+  // This is called before day-by-day iteration begins
+}
+```
+
 ## User Filtering & Privacy
 
 The application implements comprehensive user filtering to ensure only activities from the designated user are processed for privacy and accuracy.
@@ -225,6 +243,12 @@ export class NewService extends BaseActivityService {
     // Implement service-specific logic
     return [];
   }
+
+  // Optional: Override for performance optimization
+  protected async preloadForDateRange(startDate: Date, endDate: Date): Promise<void> {
+    // Preload data for the entire date range
+    // This is called before day-by-day iteration begins
+  }
 }
 ```
 
@@ -265,6 +289,11 @@ All services inherit common error handling patterns from `BaseActivityService`:
    - `GITLAB_FETCH_COMMITS`: Enable/disable commit fetching (default: true)
    - `GITLAB_FETCH_ISSUES`: Enable/disable issue fetching (default: true)
    - `GITLAB_FETCH_COMMENTS`: Enable/disable comment fetching (default: true)
+
+4. **Performance Optimization**:
+   - GitLab service preloads data for entire date ranges
+   - Uses caching to optimize subsequent day-by-day requests
+   - Reduces API calls and improves performance for date range queries
 
 ### Slack API
 

@@ -19,6 +19,15 @@ export abstract class BaseActivityService {
   protected abstract fetchActivitiesForDate(date: Date): Promise<ActivityData[]>;
 
   /**
+   * Preload data for a date range - optional override for services that need it
+   * This is called before day-by-day iteration begins
+   */
+  protected async preloadForDateRange(startDate: Date, endDate: Date): Promise<void> {
+    // Default implementation does nothing - services can override if needed
+    this.logServiceDebug(`No preload implementation for ${this.serviceName}`);
+  }
+
+  /**
    * Common fetchActivities implementation used by all services
    */
   async fetchActivities(date: Date): Promise<ActivityData[]> {
@@ -40,6 +49,25 @@ export abstract class BaseActivityService {
     }
 
     return activities;
+  }
+
+  /**
+   * Preload data for a date range - public method for external use
+   */
+  async preload(startDate: Date, endDate: Date): Promise<void> {
+    if (!this.isConfigured()) {
+      this.logger.warn(`${this.serviceName} not properly configured, skipping preload`);
+      return;
+    }
+
+    this.logger.log(`Preloading ${this.serviceName} data for range: ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`);
+
+    try {
+      await this.preloadForDateRange(startDate, endDate);
+      this.logger.log(`Completed preload for ${this.serviceName}`);
+    } catch (error) {
+      this.logger.error(`Error preloading ${this.serviceName} data:`, error);
+    }
   }
 
   /**

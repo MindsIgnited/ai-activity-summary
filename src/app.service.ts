@@ -62,6 +62,30 @@ export class AppService {
   ): Promise<DailySummary[]> {
     this.logger.log(`Generating activity summary from ${startDate.toISOString()} to ${endDate.toISOString()}`);
 
+    // Preload data for all services before day-by-day iteration
+    const services: Array<{ service: BaseActivityService; config: any; name: string }> = [
+      { service: this.slackService as BaseActivityService, config: this.configService.getSlackConfig(), name: 'Slack' },
+      { service: this.teamsService as BaseActivityService, config: this.configService.getTeamsConfig(), name: 'Teams' },
+      { service: this.jiraService as BaseActivityService, config: this.configService.getJiraConfig(), name: 'Jira' },
+      { service: this.gitlabService as BaseActivityService, config: this.configService.getGitLabConfig(), name: 'GitLab' },
+    ];
+
+    // Preload data for all enabled services
+    this.logger.log('Preloading data for all services...');
+    const preloadPromises = services
+      .filter(({ config }) => config.enabled)
+      .map(async ({ service, name }) => {
+        try {
+          await service.preload(startDate, endDate);
+          this.logger.debug(`Completed preload for ${name}`);
+        } catch (error) {
+          this.logger.error(`Error preloading ${name} data:`, error);
+        }
+      });
+
+    await Promise.all(preloadPromises);
+    this.logger.log('Completed preload for all services');
+
     const summaries: DailySummary[] = [];
     const currentDate = new Date(startDate);
 
@@ -70,13 +94,6 @@ export class AppService {
       const activities: ActivityData[] = [];
 
       // Fetch activities from all configured services
-      const services: Array<{ service: BaseActivityService; config: any; name: string }> = [
-        { service: this.slackService as BaseActivityService, config: this.configService.getSlackConfig(), name: 'Slack' },
-        { service: this.teamsService as BaseActivityService, config: this.configService.getTeamsConfig(), name: 'Teams' },
-        { service: this.jiraService as BaseActivityService, config: this.configService.getJiraConfig(), name: 'Jira' },
-        { service: this.gitlabService as BaseActivityService, config: this.configService.getGitLabConfig(), name: 'GitLab' },
-      ];
-
       for (const { service, config, name } of services) {
         if (config.enabled) {
           this.logger.debug(`Fetching ${name} activities`);

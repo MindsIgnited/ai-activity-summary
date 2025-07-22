@@ -79,6 +79,23 @@ ActivityFactory.createJiraWorklogActivity(issue, worklog)
 ActivityFactory.createJiraChangelogActivity(issue, changelog)
 ```
 
+### Performance Optimization
+The application supports preloading data for date ranges to optimize performance:
+
+- **Preload Phase**: Services can initialize data for entire date ranges before day-by-day iteration
+- **Caching**: Services can cache preloaded data for subsequent requests
+- **Flexibility**: Each service can implement its own optimization strategy
+- **Backward Compatibility**: Services without preload implementation work normally
+
+**Example Implementation:**
+```typescript
+// Override preloadForDateRange for optimization
+protected async preloadForDateRange(startDate: Date, endDate: Date): Promise<void> {
+  // Service-specific preload logic
+  // This is called before day-by-day iteration begins
+}
+```
+
 ### User Filtering & Privacy
 All services implement comprehensive user filtering to ensure only activities from the designated user are processed:
 
@@ -265,6 +282,7 @@ export interface ActivityData {
 - Use appropriate scopes for access tokens
 - **NEW**: Use `ActivityFactory` for all activity creation
 - **User Filtering**: API-level filtering with `author_id`/`author_username` parameters
+- **Performance Optimization**: Preloads data for entire date ranges with caching
 
 ### Slack API
 - Fetch channel messages and reactions
@@ -310,6 +328,12 @@ export class NewService extends BaseActivityService {
   protected async fetchActivitiesForDate(date: Date): Promise<ActivityData[]> {
     // Implement service-specific logic
     return [];
+  }
+
+  // Optional: Override for performance optimization
+  protected async preloadForDateRange(startDate: Date, endDate: Date): Promise<void> {
+    // Preload data for the entire date range
+    // This is called before day-by-day iteration begins
   }
 }
 ```
