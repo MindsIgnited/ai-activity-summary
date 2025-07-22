@@ -4,7 +4,9 @@ import { JiraService } from './services/jira.service';
 import { TeamsService } from './services/teams.service';
 import { GitLabService } from './services/gitlab.service';
 import { SlackService } from './services/slack.service';
-import { setEndOfDay } from './utils/date.utils';
+import { ConfigurationService } from './config/api.config';
+import { setEndOfDay } from './utils/string.utils';
+import { formatContentForDisplay } from './utils/string.utils';
 
 describe('AppService', () => {
   let service: AppService;
@@ -15,18 +17,22 @@ describe('AppService', () => {
 
   const mockJiraService = {
     fetchActivities: jest.fn(),
+    preload: jest.fn(),
   };
 
   const mockTeamsService = {
     fetchActivities: jest.fn(),
+    preload: jest.fn(),
   };
 
   const mockGitlabService = {
     fetchActivities: jest.fn(),
+    preload: jest.fn(),
   };
 
   const mockSlackService = {
     fetchActivities: jest.fn(),
+    preload: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -37,18 +43,21 @@ describe('AppService', () => {
           provide: JiraService,
           useValue: {
             fetchActivities: jest.fn(),
+            preload: jest.fn(),
           },
         },
         {
           provide: TeamsService,
           useValue: {
             fetchActivities: jest.fn(),
+            preload: jest.fn(),
           },
         },
         {
           provide: GitLabService,
           useValue: {
             fetchActivities: jest.fn(),
+            preload: jest.fn(),
             fetchCommitsByDateRange: jest.fn(),
             fetchMergeRequestsByDateRange: jest.fn(),
             fetchIssuesByDateRange: jest.fn(),
@@ -60,6 +69,29 @@ describe('AppService', () => {
           provide: SlackService,
           useValue: {
             fetchActivities: jest.fn(),
+            preload: jest.fn(),
+          },
+        },
+        {
+          provide: ConfigurationService,
+          useValue: {
+            getGitLabConfig: jest.fn().mockReturnValue({
+              enabled: true,
+              fetchCommits: true,
+              fetchIssues: true,
+              fetchNotes: true,
+              fetchNested: true,
+              fetchComments: true,
+            }),
+            getSlackConfig: jest.fn().mockReturnValue({
+              enabled: true,
+            }),
+            getTeamsConfig: jest.fn().mockReturnValue({
+              enabled: true,
+            }),
+            getJiraConfig: jest.fn().mockReturnValue({
+              enabled: true,
+            }),
           },
         },
       ],
@@ -85,38 +117,25 @@ describe('AppService', () => {
       const startDate = new Date('2024-01-01');
       const endDate = setEndOfDay(new Date('2024-01-01'));
 
-      const mockActivities = [
+      // Mock the services to return activities
+      gitlabService.fetchActivities.mockResolvedValue([
         {
-          id: '1',
+          id: 'gitlab-commit-123',
           type: 'gitlab' as const,
           timestamp: new Date('2024-01-01T10:00:00Z'),
-          title: 'Test commit',
-          author: 'test@example.com',
+          title: 'Commit: Test commit',
+          description: 'Test commit message',
+          author: 'Test User',
+          url: 'https://gitlab.com/test',
+          metadata: {
+            action: 'commit',
+            shortId: 'abc123',
+            projectId: 1,
+            projectName: 'test-project',
+            authorEmail: 'test@example.com',
+          },
         },
-      ];
-
-      // Mock the new ByDateRange methods
-      gitlabService.fetchCommitsByDateRange.mockResolvedValue(new Map([['2024-01-01', mockActivities]]));
-      gitlabService.fetchMergeRequestsByDateRange.mockResolvedValue(new Map());
-      gitlabService.fetchIssuesByDateRange.mockResolvedValue(new Map());
-      gitlabService.fetchComments.mockResolvedValue([]);
-      gitlabService.createCommentActivity.mockImplementation((comment) => ({
-        id: `gitlab-comment-${comment.id}`,
-        type: 'gitlab' as const,
-        timestamp: new Date(comment.created_at),
-        title: `Comment: ${comment.body.substring(0, 50)}`,
-        description: comment.body,
-        author: comment.author.name,
-        url: comment.web_url || '#',
-        metadata: {
-          action: 'comment',
-          noteableType: comment.noteable_type,
-          noteableId: comment.noteable_id,
-          projectId: comment.project_id,
-          projectName: comment.project_name,
-          authorEmail: comment.author.email,
-        },
-      }));
+      ]);
 
       slackService.fetchActivities.mockResolvedValue([]);
       teamsService.fetchActivities.mockResolvedValue([]);
@@ -135,29 +154,8 @@ describe('AppService', () => {
       const startDate = new Date('2024-01-01');
       const endDate = setEndOfDay(new Date('2024-01-03'));
 
-      // Mock the new ByDateRange methods
-      gitlabService.fetchCommitsByDateRange.mockResolvedValue(new Map());
-      gitlabService.fetchMergeRequestsByDateRange.mockResolvedValue(new Map());
-      gitlabService.fetchIssuesByDateRange.mockResolvedValue(new Map());
-      gitlabService.fetchComments.mockResolvedValue([]);
-      gitlabService.createCommentActivity.mockImplementation((comment) => ({
-        id: `gitlab-comment-${comment.id}`,
-        type: 'gitlab' as const,
-        timestamp: new Date(comment.created_at),
-        title: `Comment: ${comment.body.substring(0, 50)}`,
-        description: comment.body,
-        author: comment.author.name,
-        url: comment.web_url || '#',
-        metadata: {
-          action: 'comment',
-          noteableType: comment.noteable_type,
-          noteableId: comment.noteable_id,
-          projectId: comment.project_id,
-          projectName: comment.project_name,
-          authorEmail: comment.author.email,
-        },
-      }));
-
+      // Mock the services to return activities
+      gitlabService.fetchActivities.mockResolvedValue([]);
       slackService.fetchActivities.mockResolvedValue([]);
       teamsService.fetchActivities.mockResolvedValue([]);
       jiraService.fetchActivities.mockResolvedValue([]);
@@ -174,31 +172,10 @@ describe('AppService', () => {
       const startDate = new Date('2024-01-01');
       const endDate = setEndOfDay(new Date('2024-01-01'));
 
-      // Mock the new ByDateRange methods with error
-      gitlabService.fetchCommitsByDateRange.mockImplementation(() => {
+      // Mock the services with error
+      gitlabService.fetchActivities.mockImplementation(() => {
         throw new Error('API Error');
       });
-      gitlabService.fetchMergeRequestsByDateRange.mockResolvedValue(new Map());
-      gitlabService.fetchIssuesByDateRange.mockResolvedValue(new Map());
-      gitlabService.fetchComments.mockResolvedValue([]);
-      gitlabService.createCommentActivity.mockImplementation((comment) => ({
-        id: `gitlab-comment-${comment.id}`,
-        type: 'gitlab' as const,
-        timestamp: new Date(comment.created_at),
-        title: `Comment: ${comment.body.substring(0, 50)}`,
-        description: comment.body,
-        author: comment.author.name,
-        url: comment.web_url || '#',
-        metadata: {
-          action: 'comment',
-          noteableType: comment.noteable_type,
-          noteableId: comment.noteable_id,
-          projectId: comment.project_id,
-          projectName: comment.project_name,
-          authorEmail: comment.author.email,
-        },
-      }));
-
       slackService.fetchActivities.mockResolvedValue([]);
       teamsService.fetchActivities.mockResolvedValue([]);
       jiraService.fetchActivities.mockResolvedValue([]);

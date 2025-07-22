@@ -1,8 +1,8 @@
 import { Logger } from '@nestjs/common';
 import { RetryManager, retryConfigs, circuitBreakerConfigs } from './retry.utils';
-import { ErrorUtils, ApiError, TimeoutError, NetworkError } from './error.utils';
+import { ErrorUtils, ApiError, TimeoutError, NetworkError, AiProviderError } from './error.utils';
 
-export interface HttpRequestOptions {
+export interface AiRequestOptions {
   method?: string;
   headers?: Record<string, string>;
   body?: any;
@@ -11,25 +11,25 @@ export interface HttpRequestOptions {
   enableCircuitBreaker?: boolean;
 }
 
-export interface TraceLogConfig {
+export interface AiRequestConfig {
   logger: Logger;
-  serviceName: string;
+  providerName: string;
 }
 
 /**
- * Creates a traced request function with retry logic for a specific service
+ * Creates an AI request function with retry logic for a specific provider
  */
-export function createTracedRequest(serviceName: string, logger: Logger) {
+export function createAiRequest(providerName: string, logger: Logger) {
   const retryManager = new RetryManager(logger);
 
-  return async (url: string, options: HttpRequestOptions = {}) => {
-    const retryConfig = options.retryConfig || 'standard';
+  return async (url: string, options: AiRequestOptions = {}) => {
+    const retryConfig = options.retryConfig || 'conservative';
     const enableCircuitBreaker = options.enableCircuitBreaker ?? true;
 
-    const operationName = `${serviceName}_${options.method || 'GET'}_${new URL(url).hostname}`;
+    const operationName = `${providerName}_${options.method || 'POST'}_${new URL(url).hostname}`;
 
     return retryManager.withRetry(
-      () => makeTracedRequest(url, options, { logger, serviceName }),
+      () => makeAiRequest(url, options, { logger, providerName }),
       operationName,
       retryConfigs[retryConfig],
       enableCircuitBreaker ? circuitBreakerConfigs.api : undefined
@@ -38,15 +38,15 @@ export function createTracedRequest(serviceName: string, logger: Logger) {
 }
 
 /**
- * Makes an HTTP request with trace logging and consistent error handling
+ * Makes an AI provider request with trace logging and consistent error handling
  */
-export async function makeTracedRequest(
+export async function makeAiRequest(
   url: string,
-  options: HttpRequestOptions = {},
-  traceConfig: TraceLogConfig
+  options: AiRequestOptions = {},
+  config: AiRequestConfig
 ): Promise<any> {
-  const { logger, serviceName } = traceConfig;
-  const method = options.method || 'GET';
+  const { logger, providerName } = config;
+  const method = options.method || 'POST';
   const start = Date.now();
 
   logger.verbose(`[TRACE] ${method} ${url} - sending request`);
@@ -76,39 +76,39 @@ export async function makeTracedRequest(
       try {
         const response = await fetch(url, { ...fetchOptions, signal: controller.signal });
         clearTimeout(timeoutId);
-        return await handleResponse(response, url, logger, serviceName, start);
+        return await handleAiResponse(response, url, logger, providerName, start);
       } catch (error) {
         clearTimeout(timeoutId);
         if (error instanceof Error && error.name === 'AbortError') {
-          throw ErrorUtils.createTimeoutError(serviceName, options.timeout, url);
+          throw ErrorUtils.createTimeoutError(providerName, options.timeout, url);
         }
         if (error instanceof Error) {
-          throw ErrorUtils.createNetworkError(error, serviceName, url);
+          throw ErrorUtils.createNetworkError(error, providerName, url);
         }
         throw error;
       }
     } else {
       const response = await fetch(url, fetchOptions);
-      return await handleResponse(response, url, logger, serviceName, start);
+      return await handleAiResponse(response, url, logger, providerName, start);
     }
   } catch (error) {
     const duration = Date.now() - start;
     logger.error(`[TRACE] ${method} ${url} - ERROR after ${duration}ms: ${error}`);
     if (error instanceof Error) {
-      throw ErrorUtils.createNetworkError(error, serviceName, url);
+      throw ErrorUtils.createNetworkError(error, providerName, url);
     }
     throw error;
   }
 }
 
 /**
- * Handles the response and extracts error details
+ * Handles the AI response and extracts error details
  */
-async function handleResponse(
+async function handleAiResponse(
   response: Response,
   url: string,
   logger: Logger,
-  serviceName: string,
+  providerName: string,
   startTime: number
 ): Promise<any> {
   const duration = Date.now() - startTime;
@@ -127,10 +127,10 @@ async function handleResponse(
       }
     }
 
-    logger.error(`${serviceName} API request failed: ${response.status} ${response.statusText}`);
+    logger.error(`${providerName} API request failed: ${response.status} ${response.statusText}`);
     logger.error(`URL: ${url}`);
     logger.error(`Error details: ${errorDetails}`);
-    throw ErrorUtils.createApiError(response, serviceName, url, { errorDetails });
+    throw ErrorUtils.createApiError(response, providerName, url, { errorDetails });
   }
 
   return response.json();

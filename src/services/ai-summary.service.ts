@@ -2,6 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AiProviderService } from './ai-provider.service';
 import { ActivityData } from '../utils/ai.utils';
+import { formatContentForDisplay } from '../utils/string.utils';
+import { ErrorUtils } from '../utils/error.utils';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
@@ -163,7 +165,7 @@ export class AiSummaryService {
         content = this.convertToMarkdown(summary);
         break;
       default:
-        throw new Error(`Unsupported format: ${format}`);
+        throw ErrorUtils.createValidationError(`Unsupported format: ${format}`, 'format', format);
     }
 
     const filePath = outputPath || path.join(outputDir, filename);
@@ -222,10 +224,8 @@ export class AiSummaryService {
       if (activity.author) {
         summary += `  👤 ${activity.author}\n`;
       }
-      if (activity.description && typeof activity.description === 'string' && activity.description.length > 100) {
-        summary += `  📄 ${activity.description.substring(0, 100)}...\n`;
-      } else if (activity.description && typeof activity.description === 'string') {
-        summary += `  📄 ${activity.description}\n`;
+      if (activity.description) {
+        summary += `  📄 ${formatContentForDisplay(activity.description, 100)}\n`;
       }
       summary += '\n';
     }

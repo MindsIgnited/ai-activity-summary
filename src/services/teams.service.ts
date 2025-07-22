@@ -1,7 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { BaseActivityService } from './base-activity.service';
+import { ActivityFactory } from '../utils/activity.factory';
+import { DateRangeIterator } from '../utils/date.utils';
 import { ActivityData } from '../app.service';
-import { setEndOfDay } from '../utils/date.utils';
+import { createTracedRequest } from '../utils/http.utils';
+import { ErrorUtils } from '../utils/error.utils';
 
 interface TeamsMessage {
   id: string;
@@ -72,74 +76,59 @@ interface TeamsTeam {
 }
 
 @Injectable()
-export class TeamsService {
-  private readonly logger = new Logger(TeamsService.name);
+export class TeamsService extends BaseActivityService {
+  protected readonly serviceName = 'Teams';
+  protected readonly logger = new Logger(TeamsService.name);
   private accessToken: string | null = null;
   private tokenExpiry: Date | null = null;
   private refreshToken: string | null = null;
 
-  constructor(private readonly configService: ConfigService) { }
+  constructor(private readonly configService: ConfigService) {
+    super();
+  }
 
-  async fetchActivities(date: Date): Promise<ActivityData[]> {
-    if (!this.isConfigured()) {
-      this.logger.warn('Teams service not properly configured, skipping Teams activities');
-      return [];
-    }
+  protected isConfigured(): boolean {
+    const clientId = this.configService.get<string>('TEAMS_CLIENT_ID');
+    const clientSecret = this.configService.get<string>('TEAMS_CLIENT_SECRET');
+    const tenantId = this.configService.get<string>('TEAMS_TENANT_ID');
+    const userEmail = this.configService.get<string>('TEAMS_USER_EMAIL');
+    return !!(clientId && clientSecret && tenantId && userEmail);
+  }
 
+  protected async fetchActivitiesForDate(date: Date): Promise<ActivityData[]> {
     this.logger.log(`Fetching Teams activities for ${date.toISOString().split('T')[0]}`);
     const activities: ActivityData[] = [];
 
-    const startOfDay = new Date(date);
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = setEndOfDay(date);
+    const { startOfDay, endOfDay } = DateRangeIterator.getDayBounds(date);
 
     try {
       // Ensure we have a valid access token
       await this.ensureAccessToken();
 
-      // Try to fetch messages from channels first, fallback to chat messages
-      try {
-        this.logger.debug('Fetching Teams channel messages...');
-        const messages = await this.fetchChannelMessages(startOfDay, endOfDay);
-        activities.push(...messages.map(msg => this.createMessageActivity(msg)));
-        this.logger.debug(`Found ${messages.length} channel messages`);
-      } catch (error) {
-        this.logger.warn('Failed to fetch channel messages, trying chat messages instead:', error);
-        try {
-          this.logger.debug('Fetching Teams chat messages...');
-          const chatMessages = await this.fetchChatMessages(startOfDay, endOfDay);
-          activities.push(...chatMessages.map(msg => this.createMessageActivity(msg)));
-          this.logger.debug(`Found ${chatMessages.length} chat messages`);
-        } catch (chatError) {
-          this.logger.warn('Failed to fetch chat messages as well, continuing with other activities:', chatError);
-        }
+      // Fetch channel messages
+      const channelMessages = await this.fetchChannelMessages(startOfDay, endOfDay);
+      for (const message of channelMessages) {
+        activities.push(this.createMessageActivity(message));
       }
 
-      // Fetch calendar events (user-specific)
-      try {
-        this.logger.debug('Fetching Teams calendar events...');
-        const events = await this.fetchCalendarEvents(startOfDay, endOfDay);
-        activities.push(...events.map(event => this.createCalendarActivity(event)));
-        this.logger.debug(`Found ${events.length} calendar events`);
-      } catch (error) {
-        this.logger.warn('Failed to fetch calendar events, continuing with other activities:', error);
+      // Fetch calendar events
+      const calendarEvents = await this.fetchCalendarEvents(startOfDay, endOfDay);
+      for (const event of calendarEvents) {
+        activities.push(this.createCalendarActivity(event));
+      }
+
+      // Fetch chat messages
+      const chatMessages = await this.fetchChatMessages(startOfDay, endOfDay);
+      for (const message of chatMessages) {
+        activities.push(this.createMessageActivity(message));
       }
 
       this.logger.log(`Fetched ${activities.length} Teams activities for ${date.toISOString().split('T')[0]}`);
     } catch (error) {
-      this.logger.error(`Error fetching Teams activities for ${date.toISOString()}:`, error);
+      this.logger.error('Error fetching Teams activities:', error);
     }
 
     return activities;
-  }
-
-  private isConfigured(): boolean {
-    const clientId = this.configService.get<string>('TEAMS_CLIENT_ID');
-    const clientSecret = this.configService.get<string>('TEAMS_CLIENT_SECRET');
-    const tenantId = this.configService.get<string>('TEAMS_TENANT_ID');
-    const userEmail = this.configService.get<string>('TEAMS_EMAIL');
-
-    return !!(clientId && clientSecret && tenantId && userEmail);
   }
 
   private async ensureAccessToken(): Promise<void> {
@@ -158,10 +147,14 @@ export class TeamsService {
     const clientId = this.configService.get<string>('TEAMS_CLIENT_ID');
     const clientSecret = this.configService.get<string>('TEAMS_CLIENT_SECRET');
     const tenantId = this.configService.get<string>('TEAMS_TENANT_ID');
-    const userEmail = this.configService.get<string>('TEAMS_EMAIL');
+    const userEmail = this.configService.get<string>('TEAMS_USER_EMAIL');
 
     if (!clientId || !clientSecret || !tenantId || !userEmail) {
-      throw new Error('Missing required Teams configuration: TEAMS_CLIENT_ID, TEAMS_CLIENT_SECRET, TEAMS_TENANT_ID, or TEAMS_EMAIL');
+      throw ErrorUtils.createConfigurationError(
+        'Missing required Teams configuration: TEAMS_CLIENT_ID, TEAMS_CLIENT_SECRET, TEAMS_TENANT_ID, or TEAMS_USER_EMAIL',
+        'Teams',
+        'credentials'
+      );
     }
 
     // For delegated permissions, we need to use the authorization code flow
@@ -200,7 +193,11 @@ export class TeamsService {
 
       this.logger.error(`Device code request failed: ${deviceCodeResponse.status} ${deviceCodeResponse.statusText}`);
       this.logger.error(`Error details: ${errorText}`);
-      throw new Error(`Device code request failed: ${deviceCodeResponse.status} ${deviceCodeResponse.statusText}`);
+      throw ErrorUtils.createAuthError(
+        `Device code request failed: ${deviceCodeResponse.status} ${deviceCodeResponse.statusText}`,
+        'Teams',
+        { status: deviceCodeResponse.status, errorText }
+      );
     }
 
     const deviceCodeData = await deviceCodeResponse.json();
@@ -246,14 +243,14 @@ export class TeamsService {
         attempts++;
         continue;
       } else if (errorData.error === 'authorization_declined') {
-        throw new Error('Authentication was declined by the user');
+        throw ErrorUtils.createAuthError('Authentication was declined by the user', 'Teams');
       } else {
         this.logger.error(`Token request failed: ${errorData.error} - ${errorData.error_description}`);
-        throw new Error(`Token request failed: ${errorData.error}`);
+        throw ErrorUtils.createAuthError(`Token request failed: ${errorData.error}`, 'Teams', { errorData });
       }
     }
 
-    throw new Error('Authentication timeout - please try again');
+    throw ErrorUtils.createAuthError('Authentication timeout - please try again', 'Teams');
   }
 
   private async refreshAccessToken(): Promise<void> {
@@ -262,7 +259,7 @@ export class TeamsService {
     const tenantId = this.configService.get<string>('TEAMS_TENANT_ID');
 
     if (!this.refreshToken || !clientId || !clientSecret || !tenantId) {
-      throw new Error('Missing required configuration for token refresh');
+      throw ErrorUtils.createConfigurationError('Missing required configuration for token refresh', 'Teams', 'refreshToken');
     }
 
     const tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
@@ -296,7 +293,7 @@ export class TeamsService {
       this.logger.error(`Error details: ${errorText}`);
       // Clear the refresh token so we can re-authenticate
       this.refreshToken = null;
-      throw new Error(`Token refresh failed: ${response.status} ${response.statusText}`);
+      throw ErrorUtils.createAuthError(`Token refresh failed: ${response.status} ${response.statusText}`, 'Teams', { status: response.status, errorText });
     }
 
     const data = await response.json();
@@ -309,11 +306,11 @@ export class TeamsService {
 
   private async fetchChannelMessages(startDate: Date, endDate: Date): Promise<TeamsMessage[]> {
     const messages: TeamsMessage[] = [];
-    const userEmail = this.configService.get<string>('TEAMS_EMAIL');
+    const userEmail = this.configService.get<string>('TEAMS_USER_EMAIL');
     const teams = await this.getTeams();
 
     if (!userEmail) {
-      this.logger.warn('TEAMS_EMAIL not configured, skipping message filtering');
+      this.logger.warn('TEAMS_USER_EMAIL not configured, skipping message filtering');
       return [];
     }
 
@@ -321,7 +318,7 @@ export class TeamsService {
       try {
         // Get channels for this specific team
         const url = `https://graph.microsoft.com/v1.0/teams/${team.id}/channels`;
-        const response = await this.makeGraphRequest(url);
+        const response = await this.makeTeamsRequest(url);
         const teamChannels = response.value || [];
 
         // Process each channel in this team
@@ -329,7 +326,7 @@ export class TeamsService {
           try {
             const messagesUrl = `https://graph.microsoft.com/v1.0/teams/${team.id}/channels/${channel.id}/messages?$top=50`;
 
-            const messagesResponse = await this.makeGraphRequest(messagesUrl);
+            const messagesResponse = await this.makeTeamsRequest(messagesUrl);
             const channelMessages = messagesResponse.value || [];
 
             // Filter messages by date and user in the application
@@ -355,10 +352,10 @@ export class TeamsService {
 
   private async fetchCalendarEvents(startDate: Date, endDate: Date): Promise<TeamsCalendarEvent[]> {
     try {
-      const userEmail = this.configService.get<string>('TEAMS_EMAIL');
+      const userEmail = this.configService.get<string>('TEAMS_USER_EMAIL');
 
       if (!userEmail) {
-        this.logger.warn('TEAMS_EMAIL not configured, skipping calendar events');
+        this.logger.warn('TEAMS_USER_EMAIL not configured, skipping calendar events');
         return [];
       }
 
@@ -371,7 +368,7 @@ export class TeamsService {
 
       const url = `https://graph.microsoft.com/v1.0/users/${user.id}/calendarView?startDateTime=${startDate.toISOString()}&endDateTime=${endDate.toISOString()}&$top=100&$orderby=start/dateTime`;
 
-      const response = await this.makeGraphRequest(url);
+      const response = await this.makeTeamsRequest(url);
       return response.value || [];
     } catch (error) {
       this.logger.warn('Failed to fetch calendar events:', error);
@@ -382,7 +379,7 @@ export class TeamsService {
   private async getUserByEmail(email: string): Promise<{ id: string; displayName: string } | null> {
     try {
       const url = `https://graph.microsoft.com/v1.0/users/${email}`;
-      const response = await this.makeGraphRequest(url);
+      const response = await this.makeTeamsRequest(url);
       return {
         id: response.id,
         displayName: response.displayName,
@@ -400,7 +397,7 @@ export class TeamsService {
     for (const team of teams) {
       try {
         const url = `https://graph.microsoft.com/v1.0/teams/${team.id}/channels`;
-        const response = await this.makeGraphRequest(url);
+        const response = await this.makeTeamsRequest(url);
         const teamChannels = response.value || [];
         channels.push(...teamChannels);
       } catch (error) {
@@ -413,10 +410,10 @@ export class TeamsService {
 
   private async getTeams(): Promise<TeamsTeam[]> {
     try {
-      const userEmail = this.configService.get<string>('TEAMS_EMAIL');
+      const userEmail = this.configService.get<string>('TEAMS_USER_EMAIL');
 
       if (!userEmail) {
-        this.logger.warn('TEAMS_EMAIL not configured, skipping teams fetch');
+        this.logger.warn('TEAMS_USER_EMAIL not configured, skipping teams fetch');
         return [];
       }
 
@@ -450,133 +447,40 @@ export class TeamsService {
     return guidRegex.test(guid);
   }
 
-  private async makeGraphRequest(url: string): Promise<any> {
+  private makeGraphRequest = createTracedRequest('Teams', this.logger);
+
+  private async makeTeamsRequest(url: string): Promise<any> {
     if (!this.accessToken) {
-      throw new Error('No access token available');
+      throw ErrorUtils.createAuthError('No access token available', 'Teams');
     }
 
     this.logger.debug(`Making Graph API request to: ${url}`);
 
-    const start = Date.now();
-    this.logger.verbose(`[TRACE] GET ${url} - sending request`);
-    try {
-      const response = await fetch(url, {
-        headers: {
-          'Authorization': `Bearer ${this.accessToken}`,
-          'Accept': 'application/json',
-        },
-      });
-      const duration = Date.now() - start;
-      this.logger.verbose(`[TRACE] GET ${url} - status ${response.status} (${duration}ms)`);
-
-      if (!response.ok) {
-        let errorDetails = '';
-        try {
-          const errorResponse = await response.json();
-          errorDetails = JSON.stringify(errorResponse);
-        } catch {
-          errorDetails = await response.text();
-        }
-
-        this.logger.error(`Graph API request failed: ${response.status} ${response.statusText}`);
-        this.logger.error(`URL: ${url}`);
-        this.logger.error(`Error details: ${errorDetails}`);
-
-        if (response.status === 401) {
-          // Token might be expired, try to refresh
-          this.logger.debug('Token expired, attempting to refresh...');
-          this.accessToken = null;
-          await this.refreshAccessToken();
-
-          // Retry the request
-          const retryResponse = await fetch(url, {
-            headers: {
-              'Authorization': `Bearer ${this.accessToken}`,
-              'Accept': 'application/json',
-            },
-          });
-
-          if (!retryResponse.ok) {
-            let retryErrorDetails = '';
-            try {
-              const retryErrorResponse = await retryResponse.json();
-              retryErrorDetails = JSON.stringify(retryErrorResponse);
-            } catch {
-              retryErrorDetails = await retryResponse.text();
-            }
-
-            this.logger.error(`Retry request also failed: ${retryResponse.status} ${retryResponse.statusText}`);
-            this.logger.error(`Retry error details: ${retryErrorDetails}`);
-            throw new Error(`Teams API request failed: ${retryResponse.status} ${retryResponse.statusText}`);
-          }
-
-          return retryResponse.json();
-        }
-
-        throw new Error(`Teams API request failed: ${response.status} ${response.statusText}`);
-      }
-
-      return response.json();
-    } catch (error) {
-      const duration = Date.now() - start;
-      this.logger.error(`[TRACE] GET ${url} - ERROR after ${duration}ms: ${error}`);
-      throw error;
-    }
+    return this.makeGraphRequest(url, {
+      headers: {
+        'Authorization': `Bearer ${this.accessToken}`,
+        'Accept': 'application/json',
+      },
+      timeout: 30000, // 30 second timeout
+      retryConfig: 'conservative', // Use conservative retry for Teams API
+      enableCircuitBreaker: true,
+    });
   }
 
   private createMessageActivity(message: TeamsMessage): ActivityData {
-    return {
-      id: `teams-message-${message.id}`,
-      type: 'teams',
-      timestamp: new Date(message.createdDateTime),
-      title: `Message in Teams${message.subject ? `: ${message.subject}` : ''}`,
-      description: message.body.content,
-      author: message.from.user.displayName,
-      url: message.webUrl,
-      metadata: {
-        contentType: message.body.contentType,
-        importance: message.importance,
-        action: 'message',
-        lastModified: message.lastModifiedDateTime,
-        userEmail: message.from.user.email,
-      },
-    };
+    return ActivityFactory.createTeamsMessageActivity(message);
   }
 
   private createCalendarActivity(event: TeamsCalendarEvent): ActivityData {
-    const startTime = new Date(event.start.dateTime);
-    const endTime = new Date(event.end.dateTime);
-    const duration = Math.round((endTime.getTime() - startTime.getTime()) / 60000); // minutes
-
-    return {
-      id: `teams-calendar-${event.id}`,
-      type: 'teams',
-      timestamp: startTime,
-      title: `Calendar Event: ${event.subject}`,
-      description: event.body.content,
-      author: event.organizer.emailAddress.name,
-      url: event.webLink,
-      metadata: {
-        action: 'calendar',
-        duration,
-        attendeeCount: event.attendees.length,
-        isOnlineMeeting: event.isOnlineMeeting,
-        onlineMeetingUrl: event.onlineMeeting?.joinUrl,
-        startTime: event.start.dateTime,
-        endTime: event.end.dateTime,
-        timeZone: event.start.timeZone,
-        attendees: event.attendees.map(a => a.emailAddress.name),
-        organizerEmail: event.organizer.emailAddress.address,
-      },
-    };
+    return ActivityFactory.createTeamsCalendarActivity(event);
   }
 
   private async fetchChatMessages(startDate: Date, endDate: Date): Promise<TeamsMessage[]> {
     const messages: TeamsMessage[] = [];
-    const userEmail = this.configService.get<string>('TEAMS_EMAIL');
+    const userEmail = this.configService.get<string>('TEAMS_USER_EMAIL');
 
     if (!userEmail) {
-      this.logger.warn('TEAMS_EMAIL not configured, skipping chat message filtering');
+      this.logger.warn('TEAMS_USER_EMAIL not configured, skipping chat message filtering');
       return [];
     }
 
@@ -593,7 +497,7 @@ export class TeamsService {
 
       this.logger.debug(`Fetching Teams chat messages from: ${url}`);
 
-      const response = await this.makeGraphRequest(url);
+      const response = await this.makeTeamsRequest(url);
       const chats = response.value || [];
 
       // Extract messages from chats

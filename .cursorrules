@@ -18,9 +18,113 @@ src/
 ├── app.service.ts         # Main activity summary service
 ├── app.module.ts          # Root module
 ├── main.ts               # Command-line entry point
+├── services/
+│   ├── base-activity.service.ts  # Abstract base service
+│   ├── gitlab.service.ts         # GitLab API integration
+│   ├── slack.service.ts          # Slack API integration
+│   ├── teams.service.ts          # Teams API integration
+│   ├── jira.service.ts           # Jira API integration
+│   └── ai-summary.service.ts     # AI summary generation
+├── utils/
+│   ├── activity.factory.ts       # Standardized activity creation
+│   ├── date.utils.ts             # Date range utilities
+│   ├── string.utils.ts           # String utilities
+│   ├── error.utils.ts            # Error handling utilities
+│   ├── http.utils.ts             # HTTP request utilities
+│   ├── retry.utils.ts            # Retry logic utilities
+│   ├── performance.monitor.ts    # Performance monitoring
+│   ├── data.validator.ts         # Data validation
+│   └── config.validator.ts       # Configuration validation
 └── config/
     └── api.config.ts     # API configuration management
 ```
+
+## Architecture Overview
+
+### Unified Service Architecture
+All activity services inherit from `BaseActivityService` to ensure consistent patterns:
+
+```
+BaseActivityService (Abstract)
+├── GitLabService
+├── SlackService
+├── TeamsService
+└── JiraService
+```
+
+**Key Benefits:**
+- **Consistent Interface**: All services implement the same `fetchActivities()` method
+- **Shared Error Handling**: Common error handling and logging patterns
+- **Unified Configuration**: Standardized configuration checking across all services
+- **Reduced Duplication**: Common patterns shared in the base class
+
+### Activity Factory
+The `ActivityFactory` provides standardized methods for creating activity objects:
+
+```typescript
+// GitLab activities
+ActivityFactory.createCommitActivity(commit)
+ActivityFactory.createMergeRequestActivity(mr)
+ActivityFactory.createIssueActivity(issue)
+ActivityFactory.createCommentActivity(comment)
+
+// Teams activities
+ActivityFactory.createTeamsMessageActivity(message)
+ActivityFactory.createTeamsCalendarActivity(event)
+
+// Jira activities
+ActivityFactory.createJiraIssueActivity(issue, action)
+ActivityFactory.createJiraCommentActivity(issue, comment)
+ActivityFactory.createJiraWorklogActivity(issue, worklog)
+ActivityFactory.createJiraChangelogActivity(issue, changelog)
+```
+
+### Performance Optimization
+The application supports preloading data for date ranges to optimize performance:
+
+- **Preload Phase**: Services can initialize data for entire date ranges before day-by-day iteration
+- **Caching**: Services can cache preloaded data for subsequent requests
+- **Flexibility**: Each service can implement its own optimization strategy
+- **Backward Compatibility**: Services without preload implementation work normally
+
+**Example Implementation:**
+```typescript
+// Override preloadForDateRange for optimization
+protected async preloadForDateRange(startDate: Date, endDate: Date): Promise<void> {
+  // Service-specific preload logic
+  // This is called before day-by-day iteration begins
+}
+```
+
+### User Filtering & Privacy
+All services implement comprehensive user filtering to ensure only activities from the designated user are processed:
+
+- **GitLab**: API-level filtering with `author_id`/`author_username` parameters + post-fetch filtering by email
+- **Slack**: Post-fetch filtering by user email (requires `SLACK_USER_EMAIL` configuration)
+- **Teams**: Post-fetch filtering by user email for messages, user-specific calendar events
+- **Jira**: JQL-level filtering for issues, post-fetch filtering for comments/worklogs/changelog
+
+**Configuration Requirements:**
+```bash
+# GitLab (uses token user automatically)
+GITLAB_ACCESS_TOKEN=your_token
+
+# Slack (NEW - required for user filtering)
+SLACK_BOT_TOKEN=your_token
+SLACK_USER_EMAIL=user@example.com
+
+# Teams (already configured)
+TEAMS_USER_EMAIL=user@example.com
+
+# Jira (already configured)
+JIRA_EMAIL=user@example.com
+```
+
+**Benefits:**
+- **Privacy**: Only processes user's own activities
+- **Performance**: Reduces data transfer and processing
+- **Accuracy**: Ensures summaries contain only relevant activities
+- **Compliance**: Respects data privacy requirements
 
 ## Development Guidelines
 
@@ -32,6 +136,8 @@ src/
 - Use async/await for asynchronous operations
 - Implement proper error handling with NestJS exception filters
 - Focus on data processing and file generation rather than HTTP endpoints
+- **NEW**: Extend `BaseActivityService` for all activity services
+- **NEW**: Use `ActivityFactory` for all activity creation
 
 ### File Naming Conventions
 - Use kebab-case for file names: `activity-summary.service.ts`
@@ -40,17 +146,20 @@ src/
 - Suffix files appropriately: `.service.ts`, `.module.ts`, `.config.ts`
 
 ### API Integration Patterns
+- **NEW**: All services must extend `BaseActivityService`
 - Create separate services for each API (GitLab, Slack, Teams, Jira)
 - Use environment variables for API credentials
 - Implement proper rate limiting and error handling
 - Cache API responses when appropriate
 - Use TypeScript interfaces for API response types
+- **NEW**: Use `ActivityFactory` for standardized activity creation
 
 ### Data Processing
 - Normalize data from different APIs into common ActivityData interface
 - Implement proper date handling and timezone considerations
 - Use efficient data structures for processing large datasets
 - Implement data validation and sanitization
+- **NEW**: Use `DateRangeIterator` for date range processing
 
 ### File Output
 - Support multiple output formats (JSON, CSV, etc.)
@@ -63,6 +172,7 @@ src/
 - Mock external API calls in tests
 - Test data processing logic thoroughly
 - Include integration tests for file generation
+- **NEW**: Test base class functionality in service tests
 
 ### Security Considerations
 - Never commit API credentials to version control
@@ -80,16 +190,37 @@ src/
 
 ## Common Patterns
 
-### Service Pattern
+### Base Service Pattern
 ```typescript
 @Injectable()
-export class GitlabService {
-  constructor(private readonly configService: ConfigService) {}
+export class GitLabService extends BaseActivityService {
+  protected readonly serviceName = 'GitLab';
+  protected readonly logger = new Logger(GitLabService.name);
 
-  async fetchActivities(date: Date): Promise<ActivityData[]> {
+  constructor(private readonly configService: ConfigService) {
+    super();
+  }
+
+  protected isConfigured(): boolean {
+    const baseUrl = this.configService.get<string>('GITLAB_BASE_URL');
+    const accessToken = this.configService.get<string>('GITLAB_ACCESS_TOKEN');
+    return !!(baseUrl && accessToken);
+  }
+
+  protected async fetchActivitiesForDate(date: Date): Promise<ActivityData[]> {
     // Implementation with proper error handling
+    // Use ActivityFactory for activity creation
+    return [];
   }
 }
+```
+
+### Activity Factory Pattern
+```typescript
+// Create activities using factory methods
+const activity = ActivityFactory.createCommitActivity(commit);
+const activity = ActivityFactory.createTeamsMessageActivity(message);
+const activity = ActivityFactory.createJiraIssueActivity(issue, action);
 ```
 
 ### Configuration Pattern
@@ -149,18 +280,25 @@ export interface ActivityData {
 - Support for multiple projects
 - Handle pagination properly
 - Use appropriate scopes for access tokens
+- **NEW**: Use `ActivityFactory` for all activity creation
+- **User Filtering**: API-level filtering with `author_id`/`author_username` parameters
+- **Performance Optimization**: Preloads data for entire date ranges with caching
 
 ### Slack API
 - Fetch channel messages and reactions
 - Support for multiple channels
 - Handle rate limits and cursor-based pagination
 - Use bot tokens with appropriate scopes
+- **NEW**: Extend `BaseActivityService` for unified patterns
+- **User Filtering**: Post-fetch filtering by user email (requires `SLACK_USER_EMAIL`)
 
 ### Microsoft Teams API
 - Fetch channel messages and chat messages
 - Support for multiple teams and channels
 - Handle OAuth2 authentication flow
 - Use Microsoft Graph API endpoints
+- **NEW**: Use `ActivityFactory` for standardized activity creation
+- **User Filtering**: Post-fetch filtering for messages, user-specific calendar events
 
 ### Jira API
 - Fetch issues, comments, and work logs
@@ -168,16 +306,59 @@ export interface ActivityData {
 - Handle pagination and rate limiting
 - Use Basic Authentication with email and API token
 - Filter by date ranges and project keys
+- **NEW**: Extend `BaseActivityService` for consistent error handling
+- **User Filtering**: JQL-level filtering for issues, post-fetch filtering for comments/worklogs/changelog
+
+## Adding New Services
+
+When adding a new activity service:
+
+1. **Extend BaseActivityService**:
+```typescript
+@Injectable()
+export class NewService extends BaseActivityService {
+  protected readonly serviceName = 'NewService';
+  protected readonly logger = new Logger(NewService.name);
+
+  protected isConfigured(): boolean {
+    // Check configuration
+    return true;
+  }
+
+  protected async fetchActivitiesForDate(date: Date): Promise<ActivityData[]> {
+    // Implement service-specific logic
+    return [];
+  }
+
+  // Optional: Override for performance optimization
+  protected async preloadForDateRange(startDate: Date, endDate: Date): Promise<void> {
+    // Preload data for the entire date range
+    // This is called before day-by-day iteration begins
+  }
+}
+```
+
+2. **Add ActivityFactory Methods**:
+```typescript
+// In ActivityFactory
+static createNewServiceActivity(data: any): ActivityData {
+  return this.createActivity('newservice', id, timestamp, title, description, author, url, metadata);
+}
+```
+
+3. **Register in AppModule** and update `AppService` to include the new service.
 
 ## When Adding New Features
-1. Create appropriate services for new APIs
-2. Add comprehensive tests
-3. Update configuration management
-4. Follow the established data processing patterns
-5. Consider backward compatibility
-6. Add proper error handling
-7. Include input validation
-8. Update documentation
+1. **NEW**: Extend `BaseActivityService` for new activity services
+2. **NEW**: Add `ActivityFactory` methods for new activity types
+3. Create appropriate services for new APIs
+4. Add comprehensive tests
+5. Update configuration management
+6. Follow the established data processing patterns
+7. Consider backward compatibility
+8. Add proper error handling
+9. Include input validation
+10. Update documentation
 
 ## Code Quality Standards
 - Maintain high test coverage (>80%)
@@ -187,6 +368,8 @@ export interface ActivityData {
 - Write self-documenting code with clear naming
 - Add JSDoc comments for complex methods
 - Handle all potential error cases
+- **NEW**: All services must extend `BaseActivityService`
+- **NEW**: Use `ActivityFactory` for all activity creation
 
 ## Future Considerations
 - Plan for handling large datasets efficiently
@@ -194,4 +377,6 @@ export interface ActivityData {
 - Plan for API versioning and changes
 - Consider implementing a web interface for configuration
 - Plan for distributed processing if needed
-- Consider implementing real-time processing capabilities 
+- Consider implementing real-time processing capabilities
+- **NEW**: Extend `BaseActivityService` for new service types
+- **NEW**: Add `ActivityFactory` methods for new activity types

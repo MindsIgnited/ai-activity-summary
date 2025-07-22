@@ -3,9 +3,10 @@ import { Logger, LogLevel } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { AppService } from './app.service';
 import { AiSummaryService } from './services/ai-summary.service';
+import { ErrorUtils } from './utils/error.utils';
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { setEndOfDay, setStartOfDay } from './utils/date.utils';
+import { setEndOfDay, setStartOfDay } from './utils/string.utils';
 
 function calculateDates(period: string): { startDate: Date; endDate: Date } {
   const today = setStartOfDay(new Date());
@@ -28,7 +29,7 @@ function calculateDates(period: string): { startDate: Date; endDate: Date } {
       return { startDate: monthAgo, endDate: end };
     }
     default:
-      throw new Error(`Invalid period: ${period}. Use 'today', 'week', or 'month'`);
+      throw ErrorUtils.createCliValidationError(`Invalid period: ${period}. Use 'today', 'week', or 'month'`, 'period', period);
   }
 }
 
@@ -116,7 +117,19 @@ Examples:
       await handleActivitySummary(args, appService);
     }
   } catch (error) {
-    console.error('Error:', error.message);
+    const logger = new Logger('Main');
+    const appError = ErrorUtils.normalizeError(error as Error);
+    const userMessage = ErrorUtils.getUserFriendlyMessage(appError);
+    const suggestions = ErrorUtils.getRecoverySuggestions(appError);
+
+    console.error(`\n❌ Error: ${userMessage}`);
+
+    if (suggestions.length > 0) {
+      console.error('\n💡 Suggestions:');
+      suggestions.forEach(suggestion => console.error(`  • ${suggestion}`));
+    }
+
+    ErrorUtils.logError(logger, appError, 'main', { exitCode: 1 });
     process.exit(1);
   } finally {
     await app.close();
@@ -137,7 +150,7 @@ async function handleAiSummary(args: string[], aiSummaryService: AiSummaryServic
   const outputPathArg = outputIndex !== -1 ? args[outputIndex + 1] : undefined;
 
   if (!['json', 'txt', 'md'].includes(format)) {
-    throw new Error('Invalid format. Use json, txt, or md');
+    throw ErrorUtils.createCliValidationError('Invalid format. Use json, txt, or md', 'format', format);
   }
 
   // Show available providers if requested
@@ -159,7 +172,7 @@ async function handleAiSummary(args: string[], aiSummaryService: AiSummaryServic
     // Single date AI summary
     const date = args[dateIndex + 1];
     if (!date) {
-      throw new Error('--date requires a value (YYYY-MM-DD)');
+      throw ErrorUtils.createCliValidationError('--date requires a value (YYYY-MM-DD)', 'date');
     }
 
     console.log(`Generating AI summary for ${date}${provider ? ` using ${provider}` : ''}`);
@@ -185,7 +198,7 @@ async function handleAiSummary(args: string[], aiSummaryService: AiSummaryServic
     // Period-based AI summary
     const period = args[periodIndex + 1];
     if (!period) {
-      throw new Error('--period requires a value (today, week, or month)');
+      throw ErrorUtils.createCliValidationError('--period requires a value (today, week, or month)', 'period', period);
     }
 
     const dates = calculateDates(period);
@@ -217,7 +230,7 @@ async function handleAiSummary(args: string[], aiSummaryService: AiSummaryServic
     const endDate = args[endDateIndex + 1];
 
     if (!startDate || !endDate) {
-      throw new Error('Both --start-date and --end-date require values (YYYY-MM-DD)');
+      throw ErrorUtils.createCliValidationError('Both --start-date and --end-date require values (YYYY-MM-DD)', 'date-range');
     }
 
     console.log(`Generating AI summaries for period: ${startDate} to ${endDate}${provider ? ` using ${provider}` : ''}`);
@@ -240,7 +253,7 @@ async function handleAiSummary(args: string[], aiSummaryService: AiSummaryServic
       console.log('No activities found for the specified period');
     }
   } else {
-    throw new Error('AI summary requires --date, --period, or --start-date/--end-date');
+    throw ErrorUtils.createCliValidationError('AI summary requires --date, --period, or --start-date/--end-date', 'ai-summary-args');
   }
 }
 
@@ -258,12 +271,12 @@ async function handleActivitySummary(args: string[], appService: AppService) {
   if (periodIndex !== -1) {
     // Using --period option
     if (startDateIndex !== -1 || endDateIndex !== -1) {
-      throw new Error('--period cannot be used with --start-date or --end-date');
+      throw ErrorUtils.createCliValidationError('--period cannot be used with --start-date or --end-date', 'conflicting-args');
     }
 
     const period = args[periodIndex + 1];
     if (!period) {
-      throw new Error('--period requires a value (today, week, or month)');
+      throw ErrorUtils.createCliValidationError('--period requires a value (today, week, or month)', 'period', period);
     }
 
     const dates = calculateDates(period);
@@ -272,7 +285,7 @@ async function handleActivitySummary(args: string[], appService: AppService) {
   } else {
     // Using --start-date and --end-date
     if (startDateIndex === -1 || endDateIndex === -1) {
-      throw new Error('Either --period or both --start-date and --end-date are required');
+      throw ErrorUtils.createCliValidationError('Either --period or both --start-date and --end-date are required', 'missing-args');
     }
 
     startDate = new Date(args[startDateIndex + 1]);
@@ -280,11 +293,11 @@ async function handleActivitySummary(args: string[], appService: AppService) {
     endDate = setEndOfDay(endDate);
 
     if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
-      throw new Error('Invalid date format. Use YYYY-MM-DD');
+      throw ErrorUtils.createCliValidationError('Invalid date format. Use YYYY-MM-DD', 'date-format');
     }
 
     if (startDate > endDate) {
-      throw new Error('Start date must be before or equal to end date');
+      throw ErrorUtils.createCliValidationError('Start date must be before or equal to end date', 'date-range');
     }
   }
 
@@ -298,14 +311,14 @@ async function handleActivitySummary(args: string[], appService: AppService) {
   if (outputPathArg) {
     // Check if the path looks like a file (has an extension)
     if (path.extname(outputPathArg) !== '') {
-      throw new Error('--output must specify a directory path, not a file');
+      throw ErrorUtils.createCliValidationError('--output must specify a directory path, not a file', 'output', outputPathArg);
     }
 
     // Check if the path exists and is a directory, or create it
     try {
       const stats = await fs.stat(outputPathArg);
       if (!stats.isDirectory()) {
-        throw new Error('--output must specify a directory path, not a file');
+        throw ErrorUtils.createCliValidationError('--output must specify a directory path, not a file', 'output', outputPathArg);
       }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
@@ -315,7 +328,7 @@ async function handleActivitySummary(args: string[], appService: AppService) {
         // Re-throw our custom error
         throw error;
       } else {
-        throw new Error('--output must specify a directory path, not a file');
+        throw ErrorUtils.createCliValidationError('--output must specify a directory path, not a file', 'output', outputPathArg);
       }
     }
     outputDir = outputPathArg;

@@ -1,10 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { BaseActivityService } from './base-activity.service';
+import { ActivityFactory } from '../utils/activity.factory';
+import { DateRangeIterator } from '../utils/date.utils';
+import { setEndOfDay } from '../utils/string.utils';
 import { ActivityData } from '../app.service';
 import pLimit from 'p-limit';
-import { setEndOfDay } from '../utils/date.utils';
 import { createTracedRequest } from '../utils/http.utils';
-import { safeSubstring } from '../utils/string.utils';
+import { safeSubstring, formatContentForDisplay } from '../utils/string.utils';
 
 interface GitLabCommit {
   id: string;
@@ -115,98 +118,47 @@ interface GitLabUser {
 }
 
 @Injectable()
-export class GitLabService {
-  private readonly logger = new Logger(GitLabService.name);
+export class GitLabService extends BaseActivityService {
+  protected readonly serviceName = 'GitLab';
+  protected readonly logger = new Logger(GitLabService.name);
   private currentUser: GitLabUser | null = null;
 
-  constructor(private readonly configService: ConfigService) { }
+  // Cache for date range queries
+  private cachedActivities: Map<string, ActivityData[]> = new Map();
+  private cacheDateRange: { startDate: Date; endDate: Date } | null = null;
 
-  public isConfigured(): boolean {
+  constructor(private readonly configService: ConfigService) {
+    super();
+  }
+
+  protected isConfigured(): boolean {
     const baseUrl = this.configService.get<string>('GITLAB_BASE_URL');
     const accessToken = this.configService.get<string>('GITLAB_ACCESS_TOKEN');
     return !!(baseUrl && accessToken);
   }
 
-  public async getCurrentUser(): Promise<GitLabUser> {
-    const url = `${this.getBaseUrl()}/api/v4/user`;
-    return await this.makeGitLabRequest(url);
-  }
-
-  // For compatibility, add wrappers for fetchCommits, fetchMergeRequests, fetchIssues if needed
-  public async fetchCommits(startDate: Date, endDate: Date): Promise<GitLabCommit[]> {
-    // Use the new by-date-range method and flatten results
-    const map = await this.fetchCommitsByDateRange(startDate, endDate);
-    return Array.from(map.values()).flat().map(a => ({
-      id: a.metadata?.shortId || '',
-      short_id: a.metadata?.shortId || '',
-      title: a.title,
-      message: a.description || '',
-      author_name: a.author || '',
-      author_email: a.metadata?.authorEmail || '',
-      created_at: a.timestamp.toISOString(),
-      web_url: a.url || '',
-      project_id: a.metadata?.projectId || 0,
-      project_name: a.metadata?.projectName,
-    }));
-  }
-  public async fetchMergeRequests(startDate: Date, endDate: Date): Promise<GitLabMergeRequest[]> {
-    const map = await this.fetchMergeRequestsByDateRange(startDate, endDate);
-    return Array.from(map.values()).flat().map(a => ({
-      id: a.metadata?.iid || 0,
-      iid: a.metadata?.iid || 0,
-      title: a.title,
-      description: a.description || '',
-      state: a.metadata?.state || '',
-      created_at: a.timestamp.toISOString(),
-      updated_at: a.timestamp.toISOString(),
-      closed_at: undefined,
-      merged_at: undefined,
-      author: {
-        id: 0,
-        name: a.author || '',
-        username: '',
-        email: a.metadata?.authorEmail || '',
-      },
-      assignee: undefined,
-      web_url: a.url || '',
-      project_id: a.metadata?.projectId || 0,
-      project_name: a.metadata?.projectName,
-      source_branch: a.metadata?.sourceBranch || '',
-      target_branch: a.metadata?.targetBranch || '',
-      merge_status: a.metadata?.mergeStatus || '',
-    }));
-  }
-  public async fetchIssues(startDate: Date, endDate: Date): Promise<GitLabIssue[]> {
-    const map = await this.fetchIssuesByDateRange(startDate, endDate);
-    return Array.from(map.values()).flat().map(a => ({
-      id: a.metadata?.iid || 0,
-      iid: a.metadata?.iid || 0,
-      title: a.title,
-      description: a.description || '',
-      state: a.metadata?.state || '',
-      created_at: a.timestamp.toISOString(),
-      updated_at: a.timestamp.toISOString(),
-      closed_at: undefined,
-      author: {
-        id: 0,
-        name: a.author || '',
-        username: '',
-        email: a.metadata?.authorEmail || '',
-      },
-      assignee: undefined,
-      web_url: a.url || '',
-      project_id: a.metadata?.projectId || 0,
-      project_name: a.metadata?.projectName,
-      labels: a.metadata?.labels || [],
-      milestone: undefined,
-    }));
-  }
-
-  public async fetchActivities(date: Date): Promise<ActivityData[]> {
-    if (!this.isConfigured()) {
-      this.logger.warn('GitLab configuration incomplete, skipping GitLab activities');
-      return [];
+  /**
+   * Initialize cache with date range queries if not already cached
+   */
+  private async ensureCacheInitialized(startDate: Date, endDate: Date): Promise<void> {
+    // Check if we already have cached data for this range
+    if (this.cacheDateRange &&
+      this.cacheDateRange.startDate <= startDate &&
+      this.cacheDateRange.endDate >= endDate) {
+      return; // Cache already covers this range
     }
+
+    // If we have a cache but it doesn't cover the full range, we need to expand it
+    let newStartDate = startDate;
+    let newEndDate = endDate;
+
+    if (this.cacheDateRange) {
+      // Expand the range to cover both existing cache and new request
+      newStartDate = this.cacheDateRange.startDate < startDate ? this.cacheDateRange.startDate : startDate;
+      newEndDate = this.cacheDateRange.endDate > endDate ? this.cacheDateRange.endDate : endDate;
+    }
+
+    this.logger.log(`Initializing GitLab cache for date range: ${newStartDate.toISOString().split('T')[0]} to ${newEndDate.toISOString().split('T')[0]}`);
 
     // Get current user information
     try {
@@ -214,38 +166,76 @@ export class GitLabService {
       this.logger.debug(`Fetching activities for user: ${this.currentUser?.name} (${this.currentUser?.username})`);
     } catch (error) {
       this.logger.error('Failed to get current user information:', error);
-      return [];
+      return;
     }
 
-    const activities: ActivityData[] = [];
-    const startOfDay = new Date(date);
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(date);
-    endOfDay.setHours(23, 59, 59, 999);
+    // Clear existing cache if we're expanding the range
+    if (this.cacheDateRange) {
+      this.cachedActivities.clear();
+    }
 
     try {
-      // Fetch commits
-      const commits = await this.fetchCommits(startOfDay, endOfDay);
-      activities.push(...commits.map(commit => this.createCommitActivity(commit)));
+      // Fetch all activities for the date range using efficient range queries
+      const [commitsMap, mergeRequestsMap, issuesMap] = await Promise.all([
+        this.fetchCommitsByDateRange(newStartDate, newEndDate),
+        this.fetchMergeRequestsByDateRange(newStartDate, newEndDate),
+        this.fetchIssuesByDateRange(newStartDate, newEndDate)
+      ]);
 
-      // Fetch merge requests
-      const mergeRequests = await this.fetchMergeRequests(startOfDay, endOfDay);
-      activities.push(...mergeRequests.map(mr => this.createMergeRequestActivity(mr)));
+      // Merge all activities into the cache
+      const allMaps = [commitsMap, mergeRequestsMap, issuesMap];
+      for (const activityMap of allMaps) {
+        for (const [date, activities] of activityMap) {
+          if (!this.cachedActivities.has(date)) {
+            this.cachedActivities.set(date, []);
+          }
+          this.cachedActivities.get(date)!.push(...activities);
+        }
+      }
 
-      // Fetch issues
-      const issues = await this.fetchIssues(startOfDay, endOfDay);
-      activities.push(...issues.map(issue => this.createIssueActivity(issue)));
+      // Cache the date range
+      this.cacheDateRange = { startDate: newStartDate, endDate: newEndDate };
 
-      // Fetch comments
-      const comments = await this.fetchComments(startOfDay, endOfDay);
-      activities.push(...comments.map(comment => this.createCommentActivity(comment)));
-
-      this.logger.log(`Fetched ${activities.length} GitLab activities for user ${this.currentUser?.username} on ${date.toISOString().split('T')[0]}`);
+      const totalActivities = Array.from(this.cachedActivities.values()).flat().length;
+      this.logger.log(`Cached ${totalActivities} GitLab activities across ${this.cachedActivities.size} days`);
     } catch (error) {
-      this.logger.error(`Error fetching GitLab activities for ${date.toISOString()}:`, error);
+      this.logger.error(`Error initializing GitLab cache for date range:`, error);
     }
+  }
 
-    return activities;
+  /**
+   * Clear the cache - useful for testing or when cache becomes stale
+   */
+  public clearCache(): void {
+    this.cachedActivities.clear();
+    this.cacheDateRange = null;
+    this.logger.debug('GitLab cache cleared');
+  }
+
+  protected async fetchActivitiesForDate(date: Date): Promise<ActivityData[]> {
+    const activities: ActivityData[] = [];
+
+    // Get the date range for the current iteration
+    const startDate = new Date(date);
+    startDate.setHours(0, 0, 0, 0);
+    const endDate = new Date(date);
+    endDate.setHours(23, 59, 59, 999);
+
+    // Initialize cache for this date range
+    await this.ensureCacheInitialized(startDate, endDate);
+
+    // Return cached activities for this date
+    const dateStr = date.toISOString().split('T')[0];
+    const cachedActivities = this.cachedActivities.get(dateStr) || [];
+
+    return cachedActivities;
+  }
+
+  /**
+   * Override preloadForDateRange to initialize cache for the entire date range
+   */
+  protected async preloadForDateRange(startDate: Date, endDate: Date): Promise<void> {
+    await this.ensureCacheInitialized(startDate, endDate);
   }
 
   /**
@@ -262,7 +252,7 @@ export class GitLabService {
           try {
             const url = `${this.getBaseUrl()}/api/v4/projects/${project.id}/repository/commits?since=${startDate.toISOString()}&until=${endDate.toISOString()}&per_page=100`;
             const response = await this.makeGitLabRequest(url);
-            const projectCommits = response.map((commit: GitLabCommit) => this.createCommitActivity({ ...commit, project_name: project.name }));
+            const projectCommits = response.map((commit: GitLabCommit) => ActivityFactory.createCommitActivity({ ...commit, project_name: project.name }));
             // Filter by current user
             const userCommits = projectCommits.filter(commit =>
               commit.metadata?.authorEmail === this.currentUser?.email ||
@@ -306,7 +296,7 @@ export class GitLabService {
                 : '';
             const url = `${this.getBaseUrl()}/api/v4/projects/${project.id}/merge_requests?created_after=${startDate.toISOString()}&created_before=${endDate.toISOString()}&per_page=100&state=all${authorParam ? `&${authorParam}` : ''}`;
             const response = await this.makeGitLabRequest(url);
-            const projectMRs = response.map((mr: GitLabMergeRequest) => this.createMergeRequestActivity({ ...mr, project_name: project.name }));
+            const projectMRs = response.map((mr: GitLabMergeRequest) => ActivityFactory.createMergeRequestActivity({ ...mr, project_name: project.name }));
             allMRs.push(...projectMRs);
           } catch (error) {
             this.logger.warn(`Failed to fetch merge requests for project ${project.name}:`, error);
@@ -345,7 +335,7 @@ export class GitLabService {
                 : '';
             const url = `${this.getBaseUrl()}/api/v4/projects/${project.id}/issues?created_after=${startDate.toISOString()}&created_before=${endDate.toISOString()}&per_page=100&state=all${authorParam ? `&${authorParam}` : ''}`;
             const response = await this.makeGitLabRequest(url);
-            const projectIssues = response.map((issue: GitLabIssue) => this.createIssueActivity({ ...issue, project_name: project.name }));
+            const projectIssues = response.map((issue: GitLabIssue) => ActivityFactory.createIssueActivity({ ...issue, project_name: project.name }));
             allIssues.push(...projectIssues);
           } catch (error) {
             this.logger.warn(`Failed to fetch issues for project ${project.name}:`, error);
@@ -531,6 +521,11 @@ export class GitLabService {
     return comments;
   }
 
+  public async getCurrentUser(): Promise<GitLabUser> {
+    const url = `${this.getBaseUrl()}/api/v4/user`;
+    return await this.makeGitLabRequest(url);
+  }
+
   private async getProjects(): Promise<GitLabProject[]> {
     const projectIds = this.configService.get<string>('GITLAB_PROJECT_IDS')?.split(',') || [];
 
@@ -579,98 +574,9 @@ export class GitLabService {
         'Authorization': `Bearer ${accessToken}`,
         'Accept': 'application/json',
       },
+      timeout: 30000, // 30 second timeout
+      retryConfig: 'conservative', // Use conservative retry for GitLab API
+      enableCircuitBreaker: true,
     });
-  }
-
-  public createCommitActivity(commit: GitLabCommit): ActivityData {
-    return {
-      id: `gitlab-commit-${commit.id}`,
-      type: 'gitlab',
-      timestamp: new Date(commit.created_at),
-      title: `Commit: ${commit.title}`,
-      description: commit.message,
-      author: commit.author_name,
-      url: commit.web_url,
-      metadata: {
-        action: 'commit',
-        shortId: commit.short_id,
-        projectId: commit.project_id,
-        projectName: commit.project_name,
-        authorEmail: commit.author_email,
-      },
-    };
-  }
-
-  public createMergeRequestActivity(mr: GitLabMergeRequest): ActivityData {
-    const action = mr.state === 'merged' ? 'merged' : mr.state === 'closed' ? 'closed' : 'created';
-
-    return {
-      id: `gitlab-mr-${mr.id}`,
-      type: 'gitlab',
-      timestamp: new Date(mr.created_at),
-      title: `Merge Request ${action}: ${mr.title}`,
-      description: mr.description,
-      author: mr.author.name,
-      url: mr.web_url,
-      metadata: {
-        action: 'merge_request',
-        state: mr.state,
-        mergeStatus: mr.merge_status,
-        projectId: mr.project_id,
-        projectName: mr.project_name,
-        sourceBranch: mr.source_branch,
-        targetBranch: mr.target_branch,
-        authorEmail: mr.author.email,
-        assigneeEmail: mr.assignee?.email,
-        iid: mr.iid,
-      },
-    };
-  }
-
-  public createIssueActivity(issue: GitLabIssue): ActivityData {
-    const action = issue.state === 'closed' ? 'closed' : 'created';
-
-    return {
-      id: `gitlab-issue-${issue.id}`,
-      type: 'gitlab',
-      timestamp: new Date(issue.created_at),
-      title: `Issue ${action}: ${issue.title}`,
-      description: issue.description,
-      author: issue.author.name,
-      url: issue.web_url,
-      metadata: {
-        action: 'issue',
-        state: issue.state,
-        projectId: issue.project_id,
-        projectName: issue.project_name,
-        labels: issue.labels,
-        authorEmail: issue.author.email,
-        assigneeEmail: issue.assignee?.email,
-        iid: issue.iid,
-        milestone: issue.milestone?.title,
-      },
-    };
-  }
-
-  public createCommentActivity(comment: GitLabComment): ActivityData {
-    const noteableType = comment.noteable_type.toLowerCase();
-
-    return {
-      id: `gitlab-comment-${comment.id}`,
-      type: 'gitlab',
-      timestamp: new Date(comment.created_at),
-      title: `Comment on ${noteableType}: ${safeSubstring(comment.body, 0, 50)}${comment.body && typeof comment.body === 'string' && comment.body.length > 50 ? '...' : ''}`,
-      description: comment.body,
-      author: comment.author.name,
-      url: comment.web_url || '#',
-      metadata: {
-        action: 'comment',
-        noteableType: comment.noteable_type,
-        noteableId: comment.noteable_id,
-        projectId: comment.project_id,
-        projectName: comment.project_name,
-        authorEmail: comment.author.email,
-      },
-    };
   }
 }

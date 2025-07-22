@@ -1,7 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { BaseActivityService } from './base-activity.service';
+import { ActivityFactory } from '../utils/activity.factory';
+import { DateRangeIterator } from '../utils/date.utils';
+import { setEndOfDay } from '../utils/string.utils';
 import { ActivityData } from '../app.service';
-import { setEndOfDay } from '../utils/date.utils';
+import { createTracedRequest } from '../utils/http.utils';
 
 interface JiraIssue {
   id: string;
@@ -79,56 +83,59 @@ interface JiraChangelog {
 }
 
 @Injectable()
-export class JiraService {
-  private readonly logger = new Logger(JiraService.name);
+export class JiraService extends BaseActivityService {
+  protected readonly serviceName = 'Jira';
+  protected readonly logger = new Logger(JiraService.name);
 
-  constructor(private readonly configService: ConfigService) { }
+  constructor(private readonly configService: ConfigService) {
+    super();
+  }
 
-  async fetchActivities(date: Date): Promise<ActivityData[]> {
+  protected isConfigured(): boolean {
     const baseUrl = this.configService.get<string>('JIRA_BASE_URL');
     const email = this.configService.get<string>('JIRA_EMAIL');
     const apiToken = this.configService.get<string>('JIRA_API_TOKEN');
+    return !!(baseUrl && email && apiToken);
+  }
 
-    if (!baseUrl || !email || !apiToken) {
-      this.logger.warn('Jira configuration incomplete, skipping Jira activities');
-      return [];
-    }
-
+  protected async fetchActivitiesForDate(date: Date): Promise<ActivityData[]> {
     const activities: ActivityData[] = [];
-    const startOfDay = new Date(date);
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(date);
-    endOfDay.setHours(23, 59, 59, 999);
+    const { startOfDay, endOfDay } = DateRangeIterator.getDayBounds(date);
 
     try {
-      // Fetch issues updated on the specified date
-      const issues = await this.fetchUpdatedIssues(startOfDay, endOfDay);
+      // Fetch issues created or updated in the date range
+      const createdIssues = await this.fetchCreatedIssues(startOfDay, endOfDay);
+      for (const issue of createdIssues) {
+        activities.push(this.createIssueActivity(issue, 'created'));
+      }
 
-      for (const issue of issues) {
-        // Only add issue update activity if the user is the assignee or reporter
-        if (this.isUserInvolved(issue, email)) {
-          activities.push(this.createIssueActivity(issue, 'updated'));
+      const updatedIssues = await this.fetchUpdatedIssues(startOfDay, endOfDay);
+      for (const issue of updatedIssues) {
+        activities.push(this.createIssueActivity(issue, 'updated'));
+      }
+
+      // Fetch comments, worklogs, and changelog for all issues
+      const allIssues = [...createdIssues, ...updatedIssues];
+      for (const issue of allIssues) {
+        const comments = await this.fetchIssueComments(issue.key, startOfDay, endOfDay);
+        for (const comment of comments) {
+          activities.push(this.createCommentActivity(issue, comment));
         }
 
-        // Add comment activities only if the user is the author
-        const comments = await this.fetchIssueComments(issue.key, startOfDay, endOfDay);
-        const userComments = comments.filter(comment => comment.author.emailAddress === email);
-        activities.push(...userComments.map(comment => this.createCommentActivity(issue, comment)));
-
-        // Add work log activities only if the user is the author
         const worklogs = await this.fetchIssueWorklogs(issue.key, startOfDay, endOfDay);
-        const userWorklogs = worklogs.filter(worklog => worklog.author.emailAddress === email);
-        activities.push(...userWorklogs.map(worklog => this.createWorklogActivity(issue, worklog)));
+        for (const worklog of worklogs) {
+          activities.push(this.createWorklogActivity(issue, worklog));
+        }
 
-        // Add changelog activities only if the user is the author
-        const changelogs = await this.fetchIssueChangelog(issue.key, startOfDay, endOfDay);
-        const userChangelogs = changelogs.filter(changelog => changelog.author.emailAddress === email);
-        activities.push(...userChangelogs.map(changelog => this.createChangelogActivity(issue, changelog)));
+        const changelog = await this.fetchIssueChangelog(issue.key, startOfDay, endOfDay);
+        for (const change of changelog) {
+          activities.push(this.createChangelogActivity(issue, change));
+        }
       }
 
       this.logger.log(`Fetched ${activities.length} Jira activities for ${date.toISOString().split('T')[0]}`);
     } catch (error) {
-      this.logger.error(`Error fetching Jira activities for ${date.toISOString()}:`, error);
+      this.logger.error('Error fetching Jira activities:', error);
     }
 
     return activities;
@@ -140,7 +147,7 @@ export class JiraService {
     const baseUrl = this.configService.get<string>('JIRA_BASE_URL');
     const url = `${baseUrl}/rest/api/3/search`;
 
-    const response = await this.makeRequest(url, 'POST', {
+    const response = await this.makeJiraRequest(url, 'POST', {
       jql,
       maxResults: 100,
       fields: ['summary', 'description', 'assignee', 'reporter', 'status', 'issuetype', 'project', 'created', 'updated'],
@@ -154,15 +161,25 @@ export class JiraService {
     endDate = setEndOfDay(endDate);
     const baseUrl = this.configService.get<string>('JIRA_BASE_URL');
     const url = `${baseUrl}/rest/api/3/issue/${issueKey}/comment`;
+    const userEmail = this.configService.get<string>('JIRA_EMAIL');
 
     try {
-      const response = await this.makeRequest(url);
+      const response = await this.makeJiraRequest(url);
       const comments = response.comments || [];
 
-      return comments.filter(comment => {
+      const filteredComments = comments.filter(comment => {
         const commentDate = new Date(comment.created);
-        return commentDate >= startDate && commentDate <= endDate;
+        const dateInRange = commentDate >= startDate && commentDate <= endDate;
+
+        // Filter by user if email is configured
+        if (userEmail) {
+          return dateInRange && comment.author?.emailAddress === userEmail;
+        }
+
+        return dateInRange;
       });
+
+      return filteredComments;
     } catch (error) {
       this.logger.warn(`Failed to fetch comments for issue ${issueKey}:`, error);
       return [];
@@ -173,15 +190,25 @@ export class JiraService {
     endDate = setEndOfDay(endDate);
     const baseUrl = this.configService.get<string>('JIRA_BASE_URL');
     const url = `${baseUrl}/rest/api/3/issue/${issueKey}/worklog`;
+    const userEmail = this.configService.get<string>('JIRA_EMAIL');
 
     try {
-      const response = await this.makeRequest(url);
+      const response = await this.makeJiraRequest(url);
       const worklogs = response.worklogs || [];
 
-      return worklogs.filter(worklog => {
+      const filteredWorklogs = worklogs.filter(worklog => {
         const worklogDate = new Date(worklog.started);
-        return worklogDate >= startDate && worklogDate <= endDate;
+        const dateInRange = worklogDate >= startDate && worklogDate <= endDate;
+
+        // Filter by user if email is configured
+        if (userEmail) {
+          return dateInRange && worklog.author?.emailAddress === userEmail;
+        }
+
+        return dateInRange;
       });
+
+      return filteredWorklogs;
     } catch (error) {
       this.logger.warn(`Failed to fetch worklogs for issue ${issueKey}:`, error);
       return [];
@@ -192,22 +219,32 @@ export class JiraService {
     endDate = setEndOfDay(endDate);
     const baseUrl = this.configService.get<string>('JIRA_BASE_URL');
     const url = `${baseUrl}/rest/api/3/issue/${issueKey}?expand=changelog`;
+    const userEmail = this.configService.get<string>('JIRA_EMAIL');
 
     try {
-      const response = await this.makeRequest(url);
+      const response = await this.makeJiraRequest(url);
       const changelog = response.changelog?.histories || [];
 
-      return changelog.filter(history => {
+      const filteredChangelog = changelog.filter(history => {
         const historyDate = new Date(history.created);
-        return historyDate >= startDate && historyDate <= endDate;
+        const dateInRange = historyDate >= startDate && historyDate <= endDate;
+
+        // Filter by user if email is configured
+        if (userEmail) {
+          return dateInRange && history.author?.emailAddress === userEmail;
+        }
+
+        return dateInRange;
       });
+
+      return filteredChangelog;
     } catch (error) {
       this.logger.warn(`Failed to fetch changelog for issue ${issueKey}:`, error);
       return [];
     }
   }
 
-  private buildJQL(startDate: Date, endDate: Date): string {
+  private buildJQL(startDate: Date, endDate: Date, field?: string): string {
     endDate = setEndOfDay(endDate);
     const startDateStr = startDate.toISOString().split('T')[0];
     const endDateStr = endDate.toISOString().split('T')[0];
@@ -233,10 +270,27 @@ export class JiraService {
       jql += ` AND (${typeFilter})`;
     }
 
+    if (field === 'created') {
+      jql = `created >= "${startDateStr}" AND created <= "${endDateStr}"`;
+      if (userEmail) {
+        jql += ` AND (assignee = "${userEmail}" OR reporter = "${userEmail}" OR watcher = "${userEmail}")`;
+      }
+      if (projectKeys.length > 0) {
+        const projectFilter = projectKeys.map(key => `project = ${key}`).join(' OR ');
+        jql += ` AND (${projectFilter})`;
+      }
+      if (issueTypes.length > 0) {
+        const typeFilter = issueTypes.map(type => `issuetype = "${type}"`).join(' OR ');
+        jql += ` AND (${typeFilter})`;
+      }
+    }
+
     return jql;
   }
 
-  private async makeRequest(url: string, method: string = 'GET', body?: any): Promise<any> {
+  private makeRequest = createTracedRequest('Jira', this.logger);
+
+  private async makeJiraRequest(url: string, method: string = 'GET', body?: any): Promise<any> {
     const email = this.configService.get<string>('JIRA_EMAIL');
     const apiToken = this.configService.get<string>('JIRA_API_TOKEN');
     const headers: Record<string, string> = {
@@ -246,121 +300,47 @@ export class JiraService {
     if (body) {
       headers['Content-Type'] = 'application/json';
     }
-    const start = Date.now();
-    this.logger.verbose(`[TRACE] ${method} ${url} - sending request`);
-    try {
-      const response = await fetch(url, {
-        method,
-        headers,
-        body: body ? JSON.stringify(body) : undefined,
-      });
-      const duration = Date.now() - start;
-      this.logger.verbose(`[TRACE] ${method} ${url} - status ${response.status} (${duration}ms)`);
-      if (!response.ok) {
-        throw new Error(`Jira API request failed: ${response.status} ${response.statusText}`);
-      }
-      return response.json();
-    } catch (error) {
-      const duration = Date.now() - start;
-      this.logger.error(`[TRACE] ${method} ${url} - ERROR after ${duration}ms: ${error}`);
-      throw error;
-    }
+
+    return this.makeRequest(url, {
+      method,
+      headers,
+      body,
+      timeout: 30000, // 30 second timeout
+      retryConfig: 'conservative', // Use conservative retry for Jira API
+      enableCircuitBreaker: true,
+    });
   }
 
   private createIssueActivity(issue: JiraIssue, action: string): ActivityData {
-    const baseUrl = this.configService.get<string>('JIRA_BASE_URL');
-
-    return {
-      id: `jira-issue-${issue.id}-${action}`,
-      type: 'jira',
-      timestamp: new Date(issue.fields.updated),
-      title: `${action.charAt(0).toUpperCase() + action.slice(1)} issue: ${issue.key}`,
-      description: issue.fields.summary,
-      author: issue.fields.assignee?.displayName || issue.fields.reporter?.displayName || 'Unknown',
-      url: `${baseUrl}/browse/${issue.key}`,
-      metadata: {
-        issueKey: issue.key,
-        issueType: issue.fields.issuetype.name,
-        project: issue.fields.project.name,
-        status: issue.fields.status.name,
-        action,
-      },
-    };
+    return ActivityFactory.createJiraIssueActivity(issue, action);
   }
 
   private createCommentActivity(issue: JiraIssue, comment: JiraComment): ActivityData {
-    const baseUrl = this.configService.get<string>('JIRA_BASE_URL');
-
-    return {
-      id: `jira-comment-${comment.id}`,
-      type: 'jira',
-      timestamp: new Date(comment.created),
-      title: `Comment on ${issue.key}`,
-      description: comment.body,
-      author: comment.author.displayName,
-      url: `${baseUrl}/browse/${issue.key}`,
-      metadata: {
-        issueKey: issue.key,
-        issueType: issue.fields.issuetype.name,
-        project: issue.fields.project.name,
-        action: 'comment',
-      },
-    };
+    return ActivityFactory.createJiraCommentActivity(issue, comment);
   }
 
   private createWorklogActivity(issue: JiraIssue, worklog: JiraWorklog): ActivityData {
-    const baseUrl = this.configService.get<string>('JIRA_BASE_URL');
-    const hours = Math.round((worklog.timeSpentSeconds / 3600) * 100) / 100;
-
-    return {
-      id: `jira-worklog-${worklog.id}`,
-      type: 'jira',
-      timestamp: new Date(worklog.started),
-      title: `Time logged on ${issue.key}: ${hours}h`,
-      description: worklog.comment || 'Time logged',
-      author: worklog.author.displayName,
-      url: `${baseUrl}/browse/${issue.key}`,
-      metadata: {
-        issueKey: issue.key,
-        issueType: issue.fields.issuetype.name,
-        project: issue.fields.project.name,
-        action: 'worklog',
-        timeSpentHours: hours,
-      },
-    };
+    return ActivityFactory.createJiraWorklogActivity(issue, worklog);
   }
 
   private createChangelogActivity(issue: JiraIssue, changelog: JiraChangelog): ActivityData {
-    const baseUrl = this.configService.get<string>('JIRA_BASE_URL');
-    const changes = changelog.items.map(item => {
-      if (item.field === 'status') {
-        return `${item.fromString || 'None'} → ${item.toString || 'None'}`;
-      }
-      return `${item.field}: ${item.fromString || 'None'} → ${item.toString || 'None'}`;
-    }).join(', ');
-
-    return {
-      id: `jira-changelog-${changelog.id}`,
-      type: 'jira',
-      timestamp: new Date(changelog.created),
-      title: `Updated ${issue.key}`,
-      description: changes,
-      author: changelog.author.displayName,
-      url: `${baseUrl}/browse/${issue.key}`,
-      metadata: {
-        issueKey: issue.key,
-        issueType: issue.fields.issuetype.name,
-        project: issue.fields.project.name,
-        action: 'changelog',
-        changes: changelog.items,
-      },
-    };
+    return ActivityFactory.createJiraChangelogActivity(issue, changelog);
   }
 
-  private isUserInvolved(issue: JiraIssue, userEmail: string): boolean {
-    return (
-      issue.fields.assignee?.emailAddress === userEmail ||
-      issue.fields.reporter?.emailAddress === userEmail
-    );
+  private async fetchCreatedIssues(startDate: Date, endDate: Date): Promise<JiraIssue[]> {
+    const jql = this.buildJQL(startDate, endDate, 'created');
+    const url = `${this.getBaseUrl()}/rest/api/2/search?jql=${encodeURIComponent(jql)}&maxResults=1000`;
+
+    try {
+      const response = await this.makeJiraRequest(url);
+      return response.issues || [];
+    } catch (error) {
+      this.logger.error('Error fetching created issues:', error);
+      return [];
+    }
+  }
+
+  private getBaseUrl(): string {
+    return this.configService.get<string>('JIRA_BASE_URL')!;
   }
 }
