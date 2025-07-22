@@ -235,7 +235,6 @@ export class GitLabService extends BaseActivityService {
    * Override preloadForDateRange to initialize cache for the entire date range
    */
   protected async preloadForDateRange(startDate: Date, endDate: Date): Promise<void> {
-    this.logger.log(`Preloading GitLab data for range: ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`);
     await this.ensureCacheInitialized(startDate, endDate);
   }
 
