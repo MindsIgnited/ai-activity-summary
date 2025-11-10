@@ -126,6 +126,7 @@ export class GitLabService extends BaseActivityService {
   // Cache for date range queries
   private cachedActivities: Map<string, ActivityData[]> = new Map();
   private cacheDateRange: { startDate: Date; endDate: Date } | null = null;
+  private static readonly PACIFIC_TIME_ZONE = 'America/Los_Angeles';
 
   constructor(private readonly configService: ConfigService) {
     super();
@@ -225,7 +226,7 @@ export class GitLabService extends BaseActivityService {
     await this.ensureCacheInitialized(startDate, endDate);
 
     // Return cached activities for this date
-    const dateStr = date.toISOString().split('T')[0];
+    const dateStr = this.getPacificDateKey(date);
     const cachedActivities = this.cachedActivities.get(dateStr) || [];
 
     return cachedActivities;
@@ -268,7 +269,7 @@ export class GitLabService extends BaseActivityService {
     // Group by date
     const map = new Map<string, ActivityData[]>();
     for (const commit of allCommits) {
-      const date = commit.timestamp.toISOString().split('T')[0];
+      const date = this.getPacificDateKey(commit.timestamp);
       if (!map.has(date)) map.set(date, []);
       map.get(date)!.push(commit);
     }
@@ -307,7 +308,7 @@ export class GitLabService extends BaseActivityService {
     // Group by date
     const map = new Map<string, ActivityData[]>();
     for (const mr of allMRs) {
-      const date = mr.timestamp.toISOString().split('T')[0];
+      const date = this.getPacificDateKey(mr.timestamp);
       if (!map.has(date)) map.set(date, []);
       map.get(date)!.push(mr);
     }
@@ -346,7 +347,7 @@ export class GitLabService extends BaseActivityService {
     // Group by date
     const map = new Map<string, ActivityData[]>();
     for (const issue of allIssues) {
-      const date = issue.timestamp.toISOString().split('T')[0];
+      const date = this.getPacificDateKey(issue.timestamp);
       if (!map.has(date)) map.set(date, []);
       map.get(date)!.push(issue);
     }
@@ -578,5 +579,9 @@ export class GitLabService extends BaseActivityService {
       retryConfig: 'conservative', // Use conservative retry for GitLab API
       enableCircuitBreaker: true,
     });
+  }
+
+  private getPacificDateKey(date: Date): string {
+    return date.toLocaleDateString('en-CA', { timeZone: GitLabService.PACIFIC_TIME_ZONE });
   }
 }
