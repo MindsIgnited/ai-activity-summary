@@ -81,6 +81,14 @@ interface JiraChangelog {
     toString?: string;
   }[];
 }
+interface JiraSearchOptions {
+  jql: string;
+  fields?: string[];
+  expand?: string[];
+  pageSize?: number;
+  properties?: string[];
+  fieldsByKeys?: boolean;
+}
 
 @Injectable()
 export class JiraService extends BaseActivityService {
@@ -144,17 +152,21 @@ export class JiraService extends BaseActivityService {
   private async fetchUpdatedIssues(startDate: Date, endDate: Date): Promise<JiraIssue[]> {
     endDate = setEndOfDay(endDate);
     const jql = this.buildJQL(startDate, endDate);
-    const baseUrl = this.configService.get<string>('JIRA_BASE_URL');
-    const url = `${baseUrl}/rest/api/3/search`;
-
-    const response = await this.makeJiraRequest(url, 'POST', {
+    return this.searchIssues({
       jql,
-      maxResults: 100,
-      fields: ['summary', 'description', 'assignee', 'reporter', 'status', 'issuetype', 'project', 'created', 'updated'],
-      expand: ['changelog']
+      fields: [
+        'summary',
+        'description',
+        'assignee',
+        'reporter',
+        'status',
+        'issuetype',
+        'project',
+        'created',
+        'updated',
+      ],
+      expand: ['changelog'],
     });
-
-    return response.issues || [];
   }
 
   private async fetchIssueComments(issueKey: string, startDate: Date, endDate: Date): Promise<JiraComment[]> {
@@ -329,15 +341,80 @@ export class JiraService extends BaseActivityService {
 
   private async fetchCreatedIssues(startDate: Date, endDate: Date): Promise<JiraIssue[]> {
     const jql = this.buildJQL(startDate, endDate, 'created');
-    const url = `${this.getBaseUrl()}/rest/api/2/search?jql=${encodeURIComponent(jql)}&maxResults=1000`;
+    return this.searchIssues({
+      jql,
+      fields: [
+        'summary',
+        'description',
+        'assignee',
+        'reporter',
+        'status',
+        'issuetype',
+        'project',
+        'created',
+        'updated',
+      ],
+    });
+  }
 
-    try {
-      const response = await this.makeJiraRequest(url);
-      return response.issues || [];
-    } catch (error) {
-      this.logger.error('Error fetching created issues:', error);
-      return [];
+  private async searchIssues(options: JiraSearchOptions): Promise<JiraIssue[]> {
+    const {
+      jql,
+      fields,
+      expand,
+      pageSize = 100,
+      properties,
+      fieldsByKeys,
+    } = options;
+    const baseUrl = this.getBaseUrl();
+    const url = `${baseUrl}/rest/api/3/search/jql`;
+
+    const issues: JiraIssue[] = [];
+    let nextPageToken: string | undefined;
+
+    while (true) {
+      try {
+        const body: Record<string, unknown> = {
+          jql,
+          maxResults: pageSize,
+        };
+
+        if (fields && fields.length > 0) {
+          body.fields = fields;
+        }
+
+        if (Array.isArray(expand) && expand.length > 0) {
+          body.expand = expand.join(',');
+        }
+
+        if (Array.isArray(properties) && properties.length > 0) {
+          body.properties = properties;
+        }
+
+        if (typeof fieldsByKeys === 'boolean') {
+          body.fieldsByKeys = fieldsByKeys;
+        }
+
+        if (nextPageToken) {
+          body.nextPageToken = nextPageToken;
+        }
+
+        const response = await this.makeJiraRequest(url, 'POST', body);
+        const pageIssues: JiraIssue[] = response.issues || [];
+        issues.push(...pageIssues);
+
+        nextPageToken = response.nextPageToken || undefined;
+
+        if (!nextPageToken || response.isLast || pageIssues.length === 0) {
+          break;
+        }
+      } catch (error) {
+        this.logger.error('Jira search request failed', error);
+        break;
+      }
     }
+
+    return issues;
   }
 
   private getBaseUrl(): string {

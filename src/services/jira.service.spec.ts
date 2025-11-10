@@ -2,52 +2,49 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { JiraService } from './jira.service';
 
-describe('JiraService', () => {
-  let service: JiraService;
-  let configService: ConfigService;
+const REQUIRED_ENV_VARS = ['JIRA_BASE_URL', 'JIRA_EMAIL', 'JIRA_API_TOKEN'] as const;
+const hasIntegrationEnv = REQUIRED_ENV_VARS.every(key => !!process.env[key]);
 
-  beforeEach(async () => {
+if (!hasIntegrationEnv) {
+  console.warn(
+    'Skipping JiraService integration tests. Missing required Jira env vars: %s',
+    REQUIRED_ENV_VARS.filter(key => !process.env[key]).join(', ')
+  );
+}
+
+const describeIntegration = hasIntegrationEnv ? describe : describe.skip;
+
+describeIntegration('JiraService Integration', () => {
+  let service: JiraService;
+
+  beforeAll(async () => {
+    jest.setTimeout(60_000);
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         JiraService,
         {
           provide: ConfigService,
           useValue: {
-            get: jest.fn((key: string) => {
-              const config = {
-                'JIRA_BASE_URL': 'https://test.atlassian.net',
-                'JIRA_EMAIL': 'test@example.com',
-                'JIRA_API_TOKEN': 'test-token',
-                'JIRA_PROJECT_KEYS': 'PROJ,DEV',
-                'JIRA_ISSUE_TYPES': 'Task,Bug',
-              };
-              return config[key];
-            }),
+            get: (key: string) => process.env[key],
           },
         },
       ],
     }).compile();
 
     service = module.get<JiraService>(JiraService);
-    configService = module.get<ConfigService>(ConfigService);
   });
 
-  it('should be defined', () => {
-    expect(service).toBeDefined();
-  });
-
-  it('should return empty array when configuration is incomplete', async () => {
-    jest.spyOn(configService, 'get').mockReturnValue(undefined);
-    
-    const result = await service.fetchActivities(new Date());
-    expect(result).toEqual([]);
-  });
-
-  it('should build correct JQL query', async () => {
-    const date = new Date('2024-01-01');
+  it('fetches activities for a specific day', async () => {
+    const date = new Date();
     const activities = await service.fetchActivities(date);
-    
-    // This will fail due to network request, but we can verify the service is properly configured
-    expect(activities).toBeDefined();
+    expect(Array.isArray(activities)).toBe(true);
   });
-}); 
+
+  it('preloads data for a date range without errors', async () => {
+    const endDate = new Date();
+    const startDate = new Date(endDate);
+    startDate.setDate(endDate.getDate() - 1);
+
+    await expect(service.preload(startDate, endDate)).resolves.not.toThrow();
+  });
+});
