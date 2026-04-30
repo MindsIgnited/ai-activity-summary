@@ -122,21 +122,11 @@ The application supports multiple environment files with the following precedenc
 2. **Edit `.env.local`** with your actual API credentials:
    ```bash
    # GitLab API Configuration
+   # Activities come from the authenticated user's events feed
+   # (/api/v4/events), so no project list or fetch toggles are needed.
    GITLAB_ENABLED=true
    GITLAB_BASE_URL=https://gitlab.com
    GITLAB_ACCESS_TOKEN=your_actual_gitlab_token
-   GITLAB_PROJECT_IDS=123,456,789
-   # Optional: Control how many GitLab projects are fetched in parallel (default: 5)
-   GITLAB_PROJECT_CONCURRENCY=5
-   # Optional: Control whether to fetch commits, comments, issues, or merge request notes (all default to true)
-   GITLAB_FETCH_COMMITS=true
-   GITLAB_FETCH_COMMENTS=true
-   GITLAB_FETCH_ISSUES=true
-   GITLAB_FETCH_MR_NOTES=true
-   # Optional: If false, disables all note/comment fetching from GitLab (blanket flag that overrides all comment/note fetching)
-   GITLAB_FETCH_NOTES=true
-   # Optional: If false, disables all nested fetching (comments, notes, etc) from GitLab (overrides other nested fetch flags)
-   GITLAB_FETCH_NESTED=true
 
    # Slack API Configuration
    SLACK_ENABLED=true
@@ -280,20 +270,14 @@ All services inherit common error handling patterns from `BaseActivityService`:
    - Create a token with `read_api` scope
    - Copy the token to your `.env.local`
 
-2. **Configure Projects**:
-   - Set `GITLAB_PROJECT_IDS` to comma-separated project IDs
-   - Or leave empty to fetch all accessible projects
+2. **How activities are fetched**:
+   - The service calls `/api/v4/events` for the authenticated user, which returns push, merge request, issue, and comment events across every project the user has activity on.
+   - No project list, concurrency, or per-resource fetch toggles to manage.
 
-3. **Optional Settings**:
-   - `GITLAB_PROJECT_CONCURRENCY`: Number of parallel project requests (default: 5)
-   - `GITLAB_FETCH_COMMITS`: Enable/disable commit fetching (default: true)
-   - `GITLAB_FETCH_ISSUES`: Enable/disable issue fetching (default: true)
-   - `GITLAB_FETCH_COMMENTS`: Enable/disable comment fetching (default: true)
-
-4. **Performance Optimization**:
-   - GitLab service preloads data for entire date ranges
-   - Uses caching to optimize subsequent day-by-day requests
-   - Reduces API calls and improves performance for date range queries
+3. **Performance Optimization**:
+   - GitLab service preloads the entire date range with paginated event requests
+   - Caches results so day-by-day iteration costs nothing extra
+   - Activities are bucketed by Pacific (`America/Los_Angeles`) calendar date
 
 ### Slack API
 
@@ -362,7 +346,7 @@ All services inherit common error handling patterns from `BaseActivityService`:
 
 ## Performance
 
-GitLab project data is fetched in parallel with a concurrency limit (default: 5). This means that data for multiple projects is retrieved at the same time, making summary generation much faster for users with many projects. The concurrency limit can be set via the `GITLAB_PROJECT_CONCURRENCY` environment variable or adjusted in the code if you need to tune for your environment or API rate limits.
+GitLab activities are fetched in a single paginated call to the user events endpoint (`/api/v4/events`) instead of fanning out to every project. This means runtime no longer scales with the number of projects you have access to.
 
 ## Output Format
 

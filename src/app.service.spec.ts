@@ -58,11 +58,7 @@ describe('AppService', () => {
           useValue: {
             fetchActivities: jest.fn(),
             preload: jest.fn(),
-            fetchCommitsByDateRange: jest.fn(),
-            fetchMergeRequestsByDateRange: jest.fn(),
-            fetchIssuesByDateRange: jest.fn(),
-            fetchComments: jest.fn(),
-            createCommentActivity: jest.fn(),
+            fetchEventsByDateRange: jest.fn(),
           },
         },
         {
@@ -77,11 +73,6 @@ describe('AppService', () => {
           useValue: {
             getGitLabConfig: jest.fn().mockReturnValue({
               enabled: true,
-              fetchCommits: true,
-              fetchIssues: true,
-              fetchNotes: true,
-              fetchNested: true,
-              fetchComments: true,
             }),
             getSlackConfig: jest.fn().mockReturnValue({
               enabled: true,

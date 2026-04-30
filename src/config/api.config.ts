@@ -9,14 +9,6 @@ export interface GitLabConfig {
   enabled: boolean;
   baseUrl: string;
   accessToken: string;
-  projectIds: string[];
-  projectConcurrency: number;
-  fetchCommits: boolean;
-  fetchComments: boolean;
-  fetchMrNotes: boolean;
-  fetchIssues: boolean;
-  fetchNested: boolean;
-  fetchNotes: boolean;
 }
 
 export interface SlackConfig {
@@ -287,21 +279,10 @@ export class ConfigurationService {
   }
 
   private loadGitLabConfig(): GitLabConfig {
-    const fetchNested = ConfigValidator.validateBoolean(process.env.GITLAB_FETCH_NESTED);
-    const fetchNotes = ConfigValidator.validateBoolean(process.env.GITLAB_FETCH_NOTES);
-
     return {
       enabled: ConfigValidator.validateBoolean(process.env.GITLAB_ENABLED),
       baseUrl: ConfigValidator.validateOptionalUrl(process.env.GITLAB_BASE_URL, 'https://gitlab.com'),
       accessToken: ConfigValidator.validateOptionalString(process.env.GITLAB_ACCESS_TOKEN),
-      projectIds: ConfigValidator.validateStringArray(process.env.GITLAB_PROJECT_IDS),
-      projectConcurrency: ConfigValidator.validateNumber(process.env.GITLAB_PROJECT_CONCURRENCY, 5, 1, 20),
-      fetchCommits: ConfigValidator.validateBoolean(process.env.GITLAB_FETCH_COMMITS),
-      fetchComments: fetchNested && fetchNotes ? ConfigValidator.validateBoolean(process.env.GITLAB_FETCH_COMMENTS) : false,
-      fetchMrNotes: fetchNested && fetchNotes ? ConfigValidator.validateBoolean(process.env.GITLAB_FETCH_MR_NOTES) : false,
-      fetchIssues: ConfigValidator.validateBoolean(process.env.GITLAB_FETCH_ISSUES),
-      fetchNested,
-      fetchNotes,
     };
   }
 

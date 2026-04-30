@@ -43,28 +43,29 @@ describe('JiraService (unit)', () => {
     expect(result).toEqual([]);
   });
 
-  it('builds JQL with user, project, and issue filters for updated issues', () => {
+  it('builds JQL with currentUser(), project, and issue filters for updated issues', () => {
     const startDate = new Date('2024-01-01T00:00:00Z');
     const endDate = new Date('2024-01-01T23:59:59Z');
 
-    const jql = (service as any).buildJQL(startDate, endDate);
+    const jql = service.buildJQL(startDate, endDate);
 
-    expect(jql).toContain('updated >= "2024-01-01"');
-    expect(jql).toContain('updated <= "2024-01-01"');
-    expect(jql).toContain('assignee = "test@example.com"');
+    expect(jql).toContain('updated >= "2024-01-01 00:00"');
+    expect(jql).toContain('updated <= "2024-01-01 23:59"');
+    expect(jql).toContain('(assignee = currentUser() OR reporter = currentUser() OR watcher = currentUser())');
     expect(jql).toContain('(project = PROJ OR project = DEV)');
     expect(jql).toContain('(issuetype = "Task" OR issuetype = "Bug")');
+    expect(jql).not.toContain('test@example.com');
   });
 
   it('builds JQL for created issues when field argument is provided', () => {
     const startDate = new Date('2024-01-01T00:00:00Z');
     const endDate = new Date('2024-01-01T23:59:59Z');
 
-    const jql = (service as any).buildJQL(startDate, endDate, 'created');
+    const jql = service.buildJQL(startDate, endDate, 'created');
 
-    expect(jql.startsWith('created >= "2024-01-01"')).toBe(true);
-    expect(jql).toContain('created <= "2024-01-01"');
-    expect(jql).toContain('(assignee = "test@example.com" OR reporter = "test@example.com" OR watcher = "test@example.com")');
+    expect(jql.startsWith('created >= "2024-01-01 00:00"')).toBe(true);
+    expect(jql).toContain('created <= "2024-01-01 23:59"');
+    expect(jql).toContain('(assignee = currentUser() OR reporter = currentUser() OR watcher = currentUser())');
   });
 
   it('paginates search results until all issues are collected', async () => {

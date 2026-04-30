@@ -185,7 +185,7 @@ The application implements comprehensive user filtering to ensure only activitie
 
 All services filter activities by the current user to maintain privacy and accuracy:
 
-- **GitLab**: Uses API-level filtering with `author_id`/`author_username` parameters and post-fetch filtering by email
+- **GitLab**: Pulls the authenticated user's own events feed (`/api/v4/events`), which is inherently scoped to the token owner
 - **Slack**: Post-fetch filtering by user email (requires `SLACK_USER_EMAIL` configuration)
 - **Teams**: Post-fetch filtering by user email for messages, user-specific calendar events
 - **Jira**: Uses JQL with user email filtering for issues, post-fetch filtering for comments/worklogs/changelog

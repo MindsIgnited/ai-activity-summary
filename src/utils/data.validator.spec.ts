@@ -359,7 +359,6 @@ describe('DataValidator', () => {
       const config = {
         LOG_LEVEL: 'debug',
         GITLAB_ENABLED: true,
-        GITLAB_PROJECT_CONCURRENCY: 5,
       };
 
       const result = DataValidator.validateConfiguration(config);
@@ -385,16 +384,6 @@ describe('DataValidator', () => {
       );
     });
 
-    it('should throw error for invalid numeric fields', () => {
-      const config = {
-        LOG_LEVEL: 'debug',
-        GITLAB_PROJECT_CONCURRENCY: 'not-a-number',
-      };
-
-      expect(() => DataValidator.validateConfiguration(config)).toThrow(
-        "Field 'GITLAB_PROJECT_CONCURRENCY' must be a positive number"
-      );
-    });
   });
 
   describe('sanitizeString', () => {

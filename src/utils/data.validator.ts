@@ -323,22 +323,9 @@ export class DataValidator {
       errors.push('LOG_LEVEL must be one of: error, warn, log, debug, verbose');
     }
 
-    // Validate numeric fields
-    const numericFields = ['GITLAB_PROJECT_CONCURRENCY', 'GITLAB_FETCH_TIMEOUT'];
-    for (const field of numericFields) {
-      if (config[field] !== undefined) {
-        const value = Number(config[field]);
-        if (isNaN(value) || value < 0) {
-          errors.push(`Field '${field}' must be a positive number`);
-        }
-      }
-    }
-
     // Validate boolean fields
     const booleanFields = [
       'GITLAB_ENABLED', 'SLACK_ENABLED', 'TEAMS_ENABLED', 'JIRA_ENABLED',
-      'GITLAB_FETCH_COMMITS', 'GITLAB_FETCH_ISSUES', 'GITLAB_FETCH_NOTES',
-      'GITLAB_FETCH_NESTED'
     ];
     for (const field of booleanFields) {
       if (config[field] !== undefined && typeof config[field] !== 'boolean' && config[field] !== 'true' && config[field] !== 'false') {

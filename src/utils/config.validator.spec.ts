@@ -239,13 +239,13 @@ describe('ConfigurationValidator', () => {
     it('should preserve non-string values', () => {
       const config = {
         GITLAB_ENABLED: true,
-        GITLAB_PROJECT_CONCURRENCY: 5,
+        SOME_NUMBER: 5,
       };
 
       const sanitized = ConfigurationValidator.sanitizeConfiguration(config);
 
       expect(sanitized.GITLAB_ENABLED).toBe(true);
-      expect(sanitized.GITLAB_PROJECT_CONCURRENCY).toBe(5);
+      expect(sanitized.SOME_NUMBER).toBe(5);
     });
 
     it('should filter out null and undefined values', () => {

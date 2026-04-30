@@ -1,5 +1,46 @@
 import { setEndOfDay } from './string.utils';
 
+export const PACIFIC_TIME_ZONE = 'America/Los_Angeles';
+
+/**
+ * Returns the YYYY-MM-DD calendar date for a given instant in Pacific time.
+ * Used to bucket activities into the user's local day regardless of UTC offset.
+ */
+export function getPacificDateKey(date: Date): string {
+  return date.toLocaleDateString('en-CA', { timeZone: PACIFIC_TIME_ZONE });
+}
+
+/**
+ * Returns an ISO-8601 string with Pacific offset, e.g. "2024-01-01T10:00:00-08:00".
+ * Useful for surfacing local times in stored activity records.
+ */
+export function formatPacificIso(date: Date): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: PACIFIC_TIME_ZONE,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    timeZoneName: 'shortOffset',
+  }).formatToParts(date);
+
+  const get = (type: string) => parts.find(p => p.type === type)?.value ?? '';
+  const offsetRaw = get('timeZoneName').replace('GMT', '');
+  const offset = offsetRaw === '' ? '+00:00' : normalizeOffset(offsetRaw);
+
+  return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}:${get('second')}${offset}`;
+}
+
+function normalizeOffset(raw: string): string {
+  const match = raw.match(/^([+-])(\d{1,2})(?::?(\d{2}))?$/);
+  if (!match) return raw;
+  const [, sign, hours, minutes = '00'] = match;
+  return `${sign}${hours.padStart(2, '0')}:${minutes}`;
+}
+
 /**
  * Utility class for date range processing and iteration
  */

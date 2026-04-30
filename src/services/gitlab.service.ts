@@ -1,114 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { BaseActivityService } from './base-activity.service';
-import { ActivityFactory } from '../utils/activity.factory';
-import { DateRangeIterator } from '../utils/date.utils';
-import { setEndOfDay } from '../utils/string.utils';
 import { ActivityData } from '../app.service';
-import pLimit from 'p-limit';
+import { formatPacificIso, getPacificDateKey } from '../utils/date.utils';
+import { setEndOfDay } from '../utils/string.utils';
 import { createTracedRequest } from '../utils/http.utils';
-import { safeSubstring, formatContentForDisplay } from '../utils/string.utils';
-
-interface GitLabCommit {
-  id: string;
-  short_id: string;
-  title: string;
-  message: string;
-  author_name: string;
-  author_email: string;
-  created_at: string;
-  web_url: string;
-  project_id: number;
-  project_name?: string;
-}
-
-interface GitLabMergeRequest {
-  id: number;
-  iid: number;
-  title: string;
-  description: string;
-  state: string;
-  created_at: string;
-  updated_at: string;
-  closed_at?: string;
-  merged_at?: string;
-  author: {
-    id: number;
-    name: string;
-    username: string;
-    email: string;
-  };
-  assignee?: {
-    id: number;
-    name: string;
-    username: string;
-    email: string;
-  };
-  web_url: string;
-  project_id: number;
-  project_name?: string;
-  source_branch: string;
-  target_branch: string;
-  merge_status: string;
-}
-
-interface GitLabIssue {
-  id: number;
-  iid: number;
-  title: string;
-  description: string;
-  state: string;
-  created_at: string;
-  updated_at: string;
-  closed_at?: string;
-  author: {
-    id: number;
-    name: string;
-    username: string;
-    email: string;
-  };
-  assignee?: {
-    id: number;
-    name: string;
-    username: string;
-    email: string;
-  };
-  web_url: string;
-  project_id: number;
-  project_name?: string;
-  labels: string[];
-  milestone?: {
-    id: number;
-    title: string;
-  };
-}
-
-interface GitLabComment {
-  id: number;
-  body: string;
-  author: {
-    id: number;
-    name: string;
-    username: string;
-    email: string;
-  };
-  created_at: string;
-  updated_at: string;
-  noteable_type: string; // 'Commit', 'MergeRequest', 'Issue'
-  noteable_id: number;
-  noteable_iid?: number;
-  project_id: number;
-  project_name?: string;
-  web_url?: string;
-}
-
-interface GitLabProject {
-  id: number;
-  name: string;
-  path: string;
-  web_url: string;
-  description?: string;
-}
 
 interface GitLabUser {
   id: number;
@@ -117,16 +13,56 @@ interface GitLabUser {
   email: string;
 }
 
+interface GitLabEventAuthor {
+  id: number;
+  name: string;
+  username: string;
+}
+
+interface GitLabPushData {
+  commit_count?: number;
+  action?: string;
+  ref_type?: string;
+  ref?: string;
+  commit_title?: string;
+  commit_to?: string;
+  commit_from?: string;
+}
+
+interface GitLabEventNote {
+  id: number;
+  body: string;
+  noteable_type?: string;
+  noteable_id?: number;
+  noteable_iid?: number;
+}
+
+/**
+ * Shape of an entry returned from GET /api/v4/events.
+ * Fields vary by action_name; see https://docs.gitlab.com/api/events/.
+ */
+interface GitLabEvent {
+  id: number;
+  project_id: number;
+  action_name: string;
+  target_id?: number;
+  target_iid?: number;
+  target_type?: string | null;
+  target_title?: string;
+  created_at: string;
+  author: GitLabEventAuthor;
+  push_data?: GitLabPushData;
+  note?: GitLabEventNote;
+}
+
 @Injectable()
 export class GitLabService extends BaseActivityService {
   protected readonly serviceName = 'GitLab';
   protected readonly logger = new Logger(GitLabService.name);
-  private currentUser: GitLabUser | null = null;
 
-  // Cache for date range queries
+  private currentUser: GitLabUser | null = null;
   private cachedActivities: Map<string, ActivityData[]> = new Map();
   private cacheDateRange: { startDate: Date; endDate: Date } | null = null;
-  private static readonly PACIFIC_TIME_ZONE = 'America/Los_Angeles';
 
   constructor(private readonly configService: ConfigService) {
     super();
@@ -138,428 +74,246 @@ export class GitLabService extends BaseActivityService {
     return !!(baseUrl && accessToken);
   }
 
-  /**
-   * Initialize cache with date range queries if not already cached
-   */
-  private async ensureCacheInitialized(startDate: Date, endDate: Date): Promise<void> {
-    // Check if we already have cached data for this range
-    if (this.cacheDateRange &&
-      this.cacheDateRange.startDate <= startDate &&
-      this.cacheDateRange.endDate >= endDate) {
-      return; // Cache already covers this range
-    }
+  protected async fetchActivitiesForDate(date: Date): Promise<ActivityData[]> {
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = setEndOfDay(date);
 
-    // If we have a cache but it doesn't cover the full range, we need to expand it
-    let newStartDate = startDate;
-    let newEndDate = endDate;
-
-    if (this.cacheDateRange) {
-      // Expand the range to cover both existing cache and new request
-      newStartDate = this.cacheDateRange.startDate < startDate ? this.cacheDateRange.startDate : startDate;
-      newEndDate = this.cacheDateRange.endDate > endDate ? this.cacheDateRange.endDate : endDate;
-    }
-
-    this.logger.log(`Initializing GitLab cache for date range: ${newStartDate.toISOString().split('T')[0]} to ${newEndDate.toISOString().split('T')[0]}`);
-
-    // Get current user information
-    try {
-      this.currentUser = await this.getCurrentUser();
-      this.logger.debug(`Fetching activities for user: ${this.currentUser?.name} (${this.currentUser?.username})`);
-    } catch (error) {
-      this.logger.error('Failed to get current user information:', error);
-      return;
-    }
-
-    // Clear existing cache if we're expanding the range
-    if (this.cacheDateRange) {
-      this.cachedActivities.clear();
-    }
-
-    try {
-      // Fetch all activities for the date range using efficient range queries
-      const [commitsMap, mergeRequestsMap, issuesMap] = await Promise.all([
-        this.fetchCommitsByDateRange(newStartDate, newEndDate),
-        this.fetchMergeRequestsByDateRange(newStartDate, newEndDate),
-        this.fetchIssuesByDateRange(newStartDate, newEndDate)
-      ]);
-
-      // Merge all activities into the cache
-      const allMaps = [commitsMap, mergeRequestsMap, issuesMap];
-      for (const activityMap of allMaps) {
-        for (const [date, activities] of activityMap) {
-          if (!this.cachedActivities.has(date)) {
-            this.cachedActivities.set(date, []);
-          }
-          this.cachedActivities.get(date)!.push(...activities);
-        }
-      }
-
-      // Cache the date range
-      this.cacheDateRange = { startDate: newStartDate, endDate: newEndDate };
-
-      const totalActivities = Array.from(this.cachedActivities.values()).flat().length;
-      this.logger.log(`Cached ${totalActivities} GitLab activities across ${this.cachedActivities.size} days`);
-    } catch (error) {
-      this.logger.error(`Error initializing GitLab cache for date range:`, error);
-    }
+    await this.ensureCacheInitialized(startOfDay, endOfDay);
+    return this.cachedActivities.get(getPacificDateKey(date)) ?? [];
   }
 
-  /**
-   * Clear the cache - useful for testing or when cache becomes stale
-   */
+  protected async preloadForDateRange(startDate: Date, endDate: Date): Promise<void> {
+    await this.ensureCacheInitialized(startDate, endDate);
+  }
+
   public clearCache(): void {
     this.cachedActivities.clear();
     this.cacheDateRange = null;
     this.logger.debug('GitLab cache cleared');
   }
 
-  protected async fetchActivitiesForDate(date: Date): Promise<ActivityData[]> {
-    const activities: ActivityData[] = [];
-
-    // Get the date range for the current iteration
-    const startDate = new Date(date);
-    startDate.setHours(0, 0, 0, 0);
-    const endDate = new Date(date);
-    endDate.setHours(23, 59, 59, 999);
-
-    // Initialize cache for this date range
-    await this.ensureCacheInitialized(startDate, endDate);
-
-    // Return cached activities for this date
-    const dateStr = this.getPacificDateKey(date);
-    const cachedActivities = this.cachedActivities.get(dateStr) || [];
-
-    return cachedActivities;
-  }
-
-  /**
-   * Override preloadForDateRange to initialize cache for the entire date range
-   */
-  protected async preloadForDateRange(startDate: Date, endDate: Date): Promise<void> {
-    await this.ensureCacheInitialized(startDate, endDate);
-  }
-
-  /**
-   * Fetch all commits for the date range and group by date (YYYY-MM-DD)
-   */
-  public async fetchCommitsByDateRange(startDate: Date, endDate: Date): Promise<Map<string, ActivityData[]>> {
-    endDate = setEndOfDay(endDate);
-    const projects = await this.getProjects();
-    const projectLimit = pLimit(this.getProjectConcurrency());
-    const allCommits: ActivityData[] = [];
-    await Promise.all(
-      projects.map(project =>
-        projectLimit(async () => {
-          try {
-            const url = `${this.getBaseUrl()}/api/v4/projects/${project.id}/repository/commits?since=${startDate.toISOString()}&until=${endDate.toISOString()}&per_page=100`;
-            const response = await this.makeGitLabRequest(url);
-            const projectCommits = response.map((commit: GitLabCommit) => ActivityFactory.createCommitActivity({ ...commit, project_name: project.name }));
-            // Filter by current user
-            const userCommits = projectCommits.filter(commit =>
-              commit.metadata?.authorEmail === this.currentUser?.email ||
-              commit.author === this.currentUser?.name
-            );
-            allCommits.push(...userCommits);
-          } catch (error) {
-            this.logger.warn(`Failed to fetch commits for project ${project.name}:`, error);
-          }
-        })
-      )
-    );
-    // Group by date
-    const map = new Map<string, ActivityData[]>();
-    for (const commit of allCommits) {
-      const date = this.getPacificDateKey(commit.timestamp);
-      if (!map.has(date)) map.set(date, []);
-      map.get(date)!.push(commit);
-    }
-    return map;
-  }
-
-  /**
-   * Fetch all merge requests for the date range and group by date (YYYY-MM-DD)
-   * Only fetch MRs authored by the current user using author_id or author_username.
-   */
-  public async fetchMergeRequestsByDateRange(startDate: Date, endDate: Date): Promise<Map<string, ActivityData[]>> {
-    endDate = setEndOfDay(endDate);
-    const projects = await this.getProjects();
-    const projectLimit = pLimit(this.getProjectConcurrency());
-    const allMRs: ActivityData[] = [];
-    await Promise.all(
-      projects.map(project =>
-        projectLimit(async () => {
-          try {
-            // Use author_id or author_username to filter by current user
-            const authorParam = this.currentUser?.id
-              ? `author_id=${this.currentUser.id}`
-              : this.currentUser?.username
-                ? `author_username=${encodeURIComponent(this.currentUser.username)}`
-                : '';
-            const url = `${this.getBaseUrl()}/api/v4/projects/${project.id}/merge_requests?created_after=${startDate.toISOString()}&created_before=${endDate.toISOString()}&per_page=100&state=all${authorParam ? `&${authorParam}` : ''}`;
-            const response = await this.makeGitLabRequest(url);
-            const projectMRs = response.map((mr: GitLabMergeRequest) => ActivityFactory.createMergeRequestActivity({ ...mr, project_name: project.name }));
-            allMRs.push(...projectMRs);
-          } catch (error) {
-            this.logger.warn(`Failed to fetch merge requests for project ${project.name}:`, error);
-          }
-        })
-      )
-    );
-    // Group by date
-    const map = new Map<string, ActivityData[]>();
-    for (const mr of allMRs) {
-      const date = this.getPacificDateKey(mr.timestamp);
-      if (!map.has(date)) map.set(date, []);
-      map.get(date)!.push(mr);
-    }
-    return map;
-  }
-
-  /**
-   * Fetch all issues for the date range and group by date (YYYY-MM-DD)
-   * Only fetch issues authored by the current user using author_id or author_username.
-   */
-  public async fetchIssuesByDateRange(startDate: Date, endDate: Date): Promise<Map<string, ActivityData[]>> {
-    endDate = setEndOfDay(endDate);
-    const projects = await this.getProjects();
-    const projectLimit = pLimit(this.getProjectConcurrency());
-    const allIssues: ActivityData[] = [];
-    await Promise.all(
-      projects.map(project =>
-        projectLimit(async () => {
-          try {
-            // Use author_id or author_username to filter by current user
-            const authorParam = this.currentUser?.id
-              ? `author_id=${this.currentUser.id}`
-              : this.currentUser?.username
-                ? `author_username=${encodeURIComponent(this.currentUser.username)}`
-                : '';
-            const url = `${this.getBaseUrl()}/api/v4/projects/${project.id}/issues?created_after=${startDate.toISOString()}&created_before=${endDate.toISOString()}&per_page=100&state=all${authorParam ? `&${authorParam}` : ''}`;
-            const response = await this.makeGitLabRequest(url);
-            const projectIssues = response.map((issue: GitLabIssue) => ActivityFactory.createIssueActivity({ ...issue, project_name: project.name }));
-            allIssues.push(...projectIssues);
-          } catch (error) {
-            this.logger.warn(`Failed to fetch issues for project ${project.name}:`, error);
-          }
-        })
-      )
-    );
-    // Group by date
-    const map = new Map<string, ActivityData[]>();
-    for (const issue of allIssues) {
-      const date = this.getPacificDateKey(issue.timestamp);
-      if (!map.has(date)) map.set(date, []);
-      map.get(date)!.push(issue);
-    }
-    return map;
-  }
-
-  public async fetchComments(startDate: Date, endDate: Date): Promise<GitLabComment[]> {
-    // Check if notes fetching is disabled
-    if (this.configService.get<boolean>('GITLAB_FETCH_NOTES') === false) {
-      this.logger.debug('Skipping all GitLab note/comment fetching as GITLAB_FETCH_NOTES is false.');
-      return [];
-    }
-
-    endDate = setEndOfDay(endDate);
-    const comments: GitLabComment[] = [];
-    const projects = await this.getProjects();
-
-    // Set concurrency limit for parallel project fetches
-    const projectLimit = pLimit(this.getProjectConcurrency());
-
-    const results = await Promise.all(
-      projects.map(project =>
-        projectLimit(async () => {
-          try {
-            // Fetch comments on merge requests
-            if (this.configService.get<boolean>('GITLAB_FETCH_MR_NOTES') !== false) {
-              const mrComments = await this.fetchMergeRequestComments(project, startDate, endDate);
-              comments.push(...mrComments);
-            } else {
-              this.logger.debug(`Skipping fetch of merge request comments for project ${project.name} as GITLAB_FETCH_MR_NOTES is false.`);
-            }
-            // Fetch comments on issues
-            const issueComments = await this.fetchIssueComments(project, startDate, endDate);
-            comments.push(...issueComments);
-            // Fetch comments on commits
-            const commitComments = await this.fetchCommitComments(project, startDate, endDate);
-            comments.push(...commitComments);
-            return comments;
-          } catch (error) {
-            this.logger.warn(`Failed to fetch comments for project ${project.name}:`, error);
-            return [];
-          }
-        })
-      )
-    );
-    return results.flat();
-  }
-
-  private async fetchMergeRequestComments(project: GitLabProject, startDate: Date, endDate: Date): Promise<GitLabComment[]> {
-    // Check if notes fetching is disabled
-    if (this.configService.get<boolean>('GITLAB_FETCH_NOTES') === false) {
-      return [];
-    }
-
-    endDate = setEndOfDay(endDate);
-    const comments: GitLabComment[] = [];
-
-    try {
-      // First get merge requests, then get comments for each
-      const mrs = await this.makeGitLabRequest(`${this.getBaseUrl()}/api/v4/projects/${project.id}/merge_requests?per_page=100&state=all`);
-
-      for (const mr of mrs) {
-        const url = `${this.getBaseUrl()}/api/v4/projects/${project.id}/merge_requests/${mr.iid}/notes?per_page=100`;
-        const response = await this.makeGitLabRequest(url);
-
-        const filteredComments = response.filter((comment: GitLabComment) => {
-          const commentDate = new Date(comment.created_at);
-          return commentDate >= startDate && commentDate <= endDate;
-        }).map((comment: GitLabComment) => ({
-          ...comment,
-          project_name: project.name,
-          web_url: `${mr.web_url}#note_${comment.id}`,
-        }));
-
-        // Filter comments by current user
-        const userComments = filteredComments.filter(comment =>
-          comment.author.id === this.currentUser?.id ||
-          comment.author.username === this.currentUser?.username ||
-          comment.author.email === this.currentUser?.email
-        );
-
-        comments.push(...userComments);
-      }
-    } catch (error) {
-      this.logger.warn(`Failed to fetch merge request comments for project ${project.name}:`, error);
-    }
-
-    return comments;
-  }
-
-  private async fetchIssueComments(project: GitLabProject, startDate: Date, endDate: Date): Promise<GitLabComment[]> {
-    // Check if notes fetching is disabled
-    if (this.configService.get<boolean>('GITLAB_FETCH_NOTES') === false) {
-      return [];
-    }
-
-    endDate = setEndOfDay(endDate);
-    const comments: GitLabComment[] = [];
-
-    try {
-      // First get issues, then get comments for each
-      const issues = await this.makeGitLabRequest(`${this.getBaseUrl()}/api/v4/projects/${project.id}/issues?per_page=100&state=all`);
-
-      for (const issue of issues) {
-        const url = `${this.getBaseUrl()}/api/v4/projects/${project.id}/issues/${issue.iid}/notes?per_page=100`;
-        const response = await this.makeGitLabRequest(url);
-
-        const filteredComments = response.filter((comment: GitLabComment) => {
-          const commentDate = new Date(comment.created_at);
-          return commentDate >= startDate && commentDate <= endDate;
-        }).map((comment: GitLabComment) => ({
-          ...comment,
-          project_name: project.name,
-          web_url: `${issue.web_url}#note_${comment.id}`,
-        }));
-
-        // Filter comments by current user
-        const userComments = filteredComments.filter(comment =>
-          comment.author.id === this.currentUser?.id ||
-          comment.author.username === this.currentUser?.username ||
-          comment.author.email === this.currentUser?.email
-        );
-
-        comments.push(...userComments);
-      }
-    } catch (error) {
-      this.logger.warn(`Failed to fetch issue comments for project ${project.name}:`, error);
-    }
-
-    return comments;
-  }
-
-  private async fetchCommitComments(project: GitLabProject, startDate: Date, endDate: Date): Promise<GitLabComment[]> {
-    // Check if notes fetching is disabled
-    if (this.configService.get<boolean>('GITLAB_FETCH_NOTES') === false) {
-      return [];
-    }
-
-    endDate = setEndOfDay(endDate);
-    const comments: GitLabComment[] = [];
-
-    try {
-      // First get commits, then get comments for each
-      const commits = await this.makeGitLabRequest(`${this.getBaseUrl()}/api/v4/projects/${project.id}/repository/commits?per_page=100`);
-
-      for (const commit of commits) {
-        const url = `${this.getBaseUrl()}/api/v4/projects/${project.id}/repository/commits/${commit.id}/comments?per_page=100`;
-        const response = await this.makeGitLabRequest(url);
-
-        const filteredComments = response.filter((comment: GitLabComment) => {
-          const commentDate = new Date(comment.created_at);
-          return commentDate >= startDate && commentDate <= endDate;
-        }).map((comment: GitLabComment) => ({
-          ...comment,
-          project_name: project.name,
-          web_url: `${commit.web_url}#note_${comment.id}`,
-        }));
-
-        // Filter comments by current user
-        const userComments = filteredComments.filter(comment =>
-          comment.author.id === this.currentUser?.id ||
-          comment.author.username === this.currentUser?.username ||
-          comment.author.email === this.currentUser?.email
-        );
-
-        comments.push(...userComments);
-      }
-    } catch (error) {
-      this.logger.warn(`Failed to fetch commit comments for project ${project.name}:`, error);
-    }
-
-    return comments;
-  }
-
   public async getCurrentUser(): Promise<GitLabUser> {
-    const url = `${this.getBaseUrl()}/api/v4/user`;
-    return await this.makeGitLabRequest(url);
+    return this.makeGitLabRequest(`${this.getBaseUrl()}/api/v4/user`);
   }
 
-  private async getProjects(): Promise<GitLabProject[]> {
-    const projectIds = this.configService.get<string>('GITLAB_PROJECT_IDS')?.split(',') || [];
+  /**
+   * Fetches the authenticated user's events from GitLab and groups them by Pacific date.
+   * Single endpoint replaces per-project commit/MR/issue/note fan-out.
+   */
+  public async fetchEventsByDateRange(
+    startDate: Date,
+    endDate: Date,
+  ): Promise<Map<string, ActivityData[]>> {
+    const after = this.toEventDate(new Date(startDate.getTime() - 24 * 60 * 60 * 1000));
+    const before = this.toEventDate(new Date(endDate.getTime() + 24 * 60 * 60 * 1000));
 
-    if (projectIds.length === 0) {
-      // If no specific projects configured, fetch all accessible projects
-      try {
-        const url = `${this.getBaseUrl()}/api/v4/projects?membership=true&per_page=100`;
-        return await this.makeRequest(url);
-      } catch (error) {
-        this.logger.warn('Failed to fetch projects, using empty list');
-        return [];
-      }
+    const events: GitLabEvent[] = [];
+    const perPage = 100;
+    let page = 1;
+    let pageCount = 0;
+    const maxPages = 50;
+
+    while (pageCount < maxPages) {
+      const url = `${this.getBaseUrl()}/api/v4/events?after=${after}&before=${before}&per_page=${perPage}&page=${page}&scope=all`;
+      const batch: GitLabEvent[] = await this.makeGitLabRequest(url);
+      if (!Array.isArray(batch) || batch.length === 0) break;
+      events.push(...batch);
+      if (batch.length < perPage) break;
+      page += 1;
+      pageCount += 1;
     }
 
-    const projects: GitLabProject[] = [];
+    const grouped = new Map<string, ActivityData[]>();
+    const startMs = startDate.getTime();
+    const endMs = endDate.getTime();
 
-    for (const projectId of projectIds) {
-      try {
-        const url = `${this.getBaseUrl()}/api/v4/projects/${projectId.trim()}`;
-        const project = await this.makeGitLabRequest(url);
-        projects.push(project);
-      } catch (error) {
-        this.logger.warn(`Failed to fetch project ${projectId}:`, error);
-      }
+    for (const event of events) {
+      const eventTime = new Date(event.created_at).getTime();
+      if (eventTime < startMs || eventTime > endMs) continue;
+
+      const activity = this.eventToActivity(event);
+      if (!activity) continue;
+
+      const key = getPacificDateKey(activity.timestamp);
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key)!.push(activity);
     }
 
-    return projects;
+    return grouped;
   }
 
-  private getProjectConcurrency(): number {
-    const envValue = this.configService.get<string>('GITLAB_PROJECT_CONCURRENCY');
-    const parsed = envValue ? parseInt(envValue, 10) : NaN;
-    return !isNaN(parsed) && parsed > 0 ? parsed : 5;
+  private async ensureCacheInitialized(startDate: Date, endDate: Date): Promise<void> {
+    if (
+      this.cacheDateRange &&
+      this.cacheDateRange.startDate <= startDate &&
+      this.cacheDateRange.endDate >= endDate
+    ) {
+      return;
+    }
+
+    let newStartDate = startDate;
+    let newEndDate = endDate;
+    if (this.cacheDateRange) {
+      newStartDate =
+        this.cacheDateRange.startDate < startDate ? this.cacheDateRange.startDate : startDate;
+      newEndDate =
+        this.cacheDateRange.endDate > endDate ? this.cacheDateRange.endDate : endDate;
+      this.cachedActivities.clear();
+    }
+
+    this.logger.log(
+      `Initializing GitLab cache for date range: ${getPacificDateKey(newStartDate)} to ${getPacificDateKey(newEndDate)}`,
+    );
+
+    try {
+      this.currentUser = await this.getCurrentUser();
+      this.logger.debug(
+        `Fetching events for user: ${this.currentUser?.name} (${this.currentUser?.username})`,
+      );
+    } catch (error) {
+      this.logger.error('Failed to get current user information:', error);
+      return;
+    }
+
+    try {
+      const eventMap = await this.fetchEventsByDateRange(newStartDate, newEndDate);
+      for (const [date, activities] of eventMap) {
+        if (!this.cachedActivities.has(date)) this.cachedActivities.set(date, []);
+        this.cachedActivities.get(date)!.push(...activities);
+      }
+      this.cacheDateRange = { startDate: newStartDate, endDate: newEndDate };
+
+      const total = Array.from(this.cachedActivities.values()).flat().length;
+      this.logger.log(
+        `Cached ${total} GitLab activities across ${this.cachedActivities.size} days`,
+      );
+    } catch (error) {
+      this.logger.error('Error initializing GitLab cache for date range:', error);
+    }
+  }
+
+  private eventToActivity(event: GitLabEvent): ActivityData | null {
+    const timestamp = new Date(event.created_at);
+    const author = event.author?.name;
+    const action = event.action_name;
+    const targetType = event.target_type?.toLowerCase();
+    const baseMeta = {
+      eventId: event.id,
+      action,
+      targetType: event.target_type ?? null,
+      projectId: event.project_id,
+      localTime: formatPacificIso(timestamp),
+    } as Record<string, any>;
+
+    if (event.push_data) {
+      const push = event.push_data;
+      const ref = push.ref ?? '';
+      const refType = push.ref_type ?? 'branch';
+      const commitCount = push.commit_count ?? 0;
+      const verb = push.action ?? action;
+      const title = push.commit_title
+        ? `Push (${verb}) to ${refType} ${ref}: ${push.commit_title}`
+        : `Push (${verb}) to ${refType} ${ref} (${commitCount} commit${commitCount === 1 ? '' : 's'})`;
+
+      return {
+        id: `gitlab-event-${event.id}`,
+        type: 'gitlab',
+        timestamp,
+        title,
+        description: push.commit_title,
+        author,
+        url: undefined,
+        metadata: {
+          ...baseMeta,
+          action: 'push',
+          pushAction: verb,
+          ref,
+          refType,
+          commitCount,
+          commitFrom: push.commit_from,
+          commitTo: push.commit_to,
+        },
+      };
+    }
+
+    if (event.note) {
+      const note = event.note;
+      const noteableType = note.noteable_type?.toLowerCase() ?? targetType ?? 'item';
+      const snippet = (note.body ?? '').substring(0, 80);
+
+      return {
+        id: `gitlab-event-${event.id}`,
+        type: 'gitlab',
+        timestamp,
+        title: `Comment on ${noteableType}: ${snippet}`,
+        description: note.body,
+        author,
+        url: undefined,
+        metadata: {
+          ...baseMeta,
+          action: 'comment',
+          noteableType: note.noteable_type,
+          noteableId: note.noteable_id,
+          noteableIid: note.noteable_iid,
+        },
+      };
+    }
+
+    if (targetType === 'mergerequest' || targetType === 'merge_request') {
+      return {
+        id: `gitlab-event-${event.id}`,
+        type: 'gitlab',
+        timestamp,
+        title: `Merge Request ${action}: ${event.target_title ?? ''}`.trim(),
+        description: undefined,
+        author,
+        url: undefined,
+        metadata: {
+          ...baseMeta,
+          action: 'merge_request',
+          state: action,
+          targetIid: event.target_iid,
+        },
+      };
+    }
+
+    if (targetType === 'issue' || targetType === 'workitem') {
+      return {
+        id: `gitlab-event-${event.id}`,
+        type: 'gitlab',
+        timestamp,
+        title: `Issue ${action}: ${event.target_title ?? ''}`.trim(),
+        description: undefined,
+        author,
+        url: undefined,
+        metadata: {
+          ...baseMeta,
+          action: 'issue',
+          state: action,
+          targetIid: event.target_iid,
+        },
+      };
+    }
+
+    if (!event.target_title && !event.push_data && !event.note) {
+      return null;
+    }
+
+    return {
+      id: `gitlab-event-${event.id}`,
+      type: 'gitlab',
+      timestamp,
+      title: `${action}${event.target_title ? `: ${event.target_title}` : ''}`,
+      description: undefined,
+      author,
+      url: undefined,
+      metadata: baseMeta,
+    };
+  }
+
+  private toEventDate(date: Date): string {
+    return getPacificDateKey(date);
   }
 
   private getBaseUrl(): string {
@@ -572,16 +326,12 @@ export class GitLabService extends BaseActivityService {
     const accessToken = this.configService.get<string>('GITLAB_ACCESS_TOKEN');
     return this.makeRequest(url, {
       headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Accept': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+        Accept: 'application/json',
       },
-      timeout: 30000, // 30 second timeout
-      retryConfig: 'conservative', // Use conservative retry for GitLab API
+      timeout: 30000,
+      retryConfig: 'conservative',
       enableCircuitBreaker: true,
     });
-  }
-
-  private getPacificDateKey(date: Date): string {
-    return date.toLocaleDateString('en-CA', { timeZone: GitLabService.PACIFIC_TIME_ZONE });
   }
 }
