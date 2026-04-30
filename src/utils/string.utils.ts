@@ -148,6 +148,37 @@ export function stripHtmlTags(html: string | undefined | null): string {
 }
 
 /**
+ * Converts an Atlassian Document Format (ADF) node — used by Jira Cloud v3
+ * APIs for issue descriptions, comment bodies, and worklog comments — into
+ * plain text. Falls through unchanged if the input is already a string or
+ * empty, so callers can pass either v2 or v3 payloads safely.
+ *
+ * ADF reference: https://developer.atlassian.com/cloud/jira/platform/apis/document/structure/
+ */
+export function adfToPlainText(node: any): string {
+  if (node === null || node === undefined) return '';
+  if (typeof node === 'string') return node;
+  if (Array.isArray(node)) return node.map(adfToPlainText).join('');
+
+  if (typeof node !== 'object') return '';
+
+  if (node.type === 'text') return typeof node.text === 'string' ? node.text : '';
+  if (node.type === 'hardBreak') return '\n';
+  if (node.type === 'mention') return node.attrs?.text || `@${node.attrs?.id ?? ''}`;
+  if (node.type === 'emoji') return node.attrs?.shortName || node.attrs?.text || '';
+  if (node.type === 'inlineCard' || node.type === 'blockCard') return node.attrs?.url || '';
+
+  const inner = Array.isArray(node.content) ? node.content.map(adfToPlainText).join('') : '';
+
+  const blockTypes = new Set([
+    'paragraph', 'heading', 'blockquote', 'codeBlock',
+    'bulletList', 'orderedList', 'listItem', 'rule',
+    'panel', 'mediaSingle', 'mediaGroup', 'table', 'tableRow',
+  ]);
+  return blockTypes.has(node.type) ? `${inner}\n` : inner;
+}
+
+/**
  * Sanitizes text content for safe display
  * @param text The text to sanitize
  * @param maxLength Maximum length (default: 300)

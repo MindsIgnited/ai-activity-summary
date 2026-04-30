@@ -1,4 +1,5 @@
 import { ActivityData } from '../app.service';
+import { adfToPlainText, safeTruncate } from './string.utils';
 
 /**
  * Factory class for creating standardized ActivityData objects
@@ -300,13 +301,14 @@ export class ActivityFactory {
   static createJiraIssueActivity(issue: any, action: string): ActivityData {
     const timestamp = new Date(issue.fields.created);
     const title = `Issue ${action}: ${issue.key} - ${issue.fields.summary}`;
+    const description = adfToPlainText(issue.fields.description).trim() || undefined;
 
     return this.createActivity(
       'jira',
       `jira-issue-${issue.key}`,
       timestamp,
       title,
-      issue.fields.description,
+      description,
       issue.fields.reporter?.displayName || 'Unknown',
       undefined, // URL will be constructed in the service
       {
@@ -328,14 +330,15 @@ export class ActivityFactory {
    */
   static createJiraCommentActivity(issue: any, comment: any): ActivityData {
     const timestamp = new Date(comment.created);
-    const title = `Comment on ${issue.key}: ${comment.body.substring(0, 50)}`;
+    const body = adfToPlainText(comment.body).trim();
+    const title = `Comment on ${issue.key}: ${safeTruncate(body, 50)}`;
 
     return this.createActivity(
       'jira',
       `jira-comment-${comment.id}`,
       timestamp,
       title,
-      comment.body,
+      body || undefined,
       comment.author.displayName,
       undefined, // URL will be constructed in the service
       {
@@ -357,12 +360,14 @@ export class ActivityFactory {
     const hoursSpent = worklog.timeSpentSeconds / 3600;
     const title = `Work logged on ${issue.key}: ${hoursSpent.toFixed(1)}h`;
 
+    const worklogComment = adfToPlainText(worklog.comment).trim() || undefined;
+
     return this.createActivity(
       'jira',
       `jira-worklog-${worklog.id}`,
       timestamp,
       title,
-      worklog.comment,
+      worklogComment,
       worklog.author.displayName,
       undefined, // URL will be constructed in the service
       {
